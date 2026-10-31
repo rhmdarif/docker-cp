@@ -170,13 +170,43 @@ func TestLimiterBounded(t *testing.T) {
 	for i := 0; i < maxLimiterKeys; i++ {
 		l.Take(fmt.Sprintf("k-%d", i))
 	}
-	if l.Take("one-too-many") {
-		t.Error("new key beyond the cap must be refused")
+	if !l.Take("one-too-many") {
+		t.Error("new key at the cap must be admitted by evicting the oldest")
 	}
 	if n := l.size(); n > maxLimiterKeys {
 		t.Fatalf("size %d > cap", n)
 	}
 	if !l.Take("k-1") {
 		t.Error("existing key under its limit must still be allowed")
+	}
+}
+
+func TestLimiterEvictsOldestWhenFull(t *testing.T) {
+	c := &clock{time.Unix(1000, 0)}
+	l := NewLimiter(5, 15*time.Minute, c.now)
+	l.Take("oldest")
+	c.t = c.t.Add(time.Second)
+	for i := 0; i < 5; i++ {
+		l.Take("blocked")
+	}
+	for i := 0; i < maxLimiterKeys-2; i++ {
+		c.t = c.t.Add(time.Millisecond)
+		l.Take(fmt.Sprintf("k-%d", i))
+	}
+	if n := l.size(); n != maxLimiterKeys {
+		t.Fatalf("setup: size %d, want %d", n, maxLimiterKeys)
+	}
+	c.t = c.t.Add(time.Millisecond)
+	if !l.Take("newcomer") {
+		t.Fatal("new key must be admitted when full")
+	}
+	if n := l.size(); n > maxLimiterKeys {
+		t.Fatalf("size %d > cap", n)
+	}
+	if _, ok := l.fails["oldest"]; ok {
+		t.Error("oldest key should have been evicted")
+	}
+	if l.Take("blocked") {
+		t.Error("recently blocked key that is not the oldest must stay blocked")
 	}
 }

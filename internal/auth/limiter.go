@@ -9,8 +9,9 @@ import (
 const (
 	// pruneAbove: Take sweeps expired keys once the map is larger than this.
 	pruneAbove = 1024
-	// maxLimiterKeys caps tracked keys; a new key beyond it is refused, so a
-	// flood of distinct addresses cannot grow memory without bound.
+	// maxLimiterKeys caps tracked keys; at the cap the key with the oldest
+	// last attempt is evicted, so a flood of distinct addresses can neither
+	// grow memory without bound nor lock out a new (legitimate) key.
 	maxLimiterKeys = 10000
 )
 
@@ -86,7 +87,8 @@ func (l *Limiter) Reset(key string) {
 // false, recording nothing, when max attempts already fall in the window.
 // Use it before the expensive check so concurrent requests cannot all slip
 // past a separate Allow; call Reset on success.
-// Past maxLimiterKeys tracked keys, a key not yet tracked is refused.
+// At maxLimiterKeys tracked keys, a key not yet tracked evicts the key whose
+// last attempt is oldest.
 func (l *Limiter) Take(key string) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -97,13 +99,28 @@ func (l *Limiter) Take(key string) bool {
 	}
 	recent := l.recent(key)
 	if recent == nil && len(l.fails) >= maxLimiterKeys {
-		return false
+		l.evictOldest()
 	}
 	if len(recent) >= l.max {
 		return false
 	}
 	l.fails[key] = append(recent, l.now())
 	return true
+}
+
+// evictOldest removes the key whose most recent attempt is oldest; caller
+// holds l.mu.
+func (l *Limiter) evictOldest() {
+	var oldestKey string
+	var oldest time.Time
+	first := true
+	for k, ts := range l.fails {
+		last := ts[len(ts)-1]
+		if first || last.Before(oldest) {
+			oldestKey, oldest, first = k, last, false
+		}
+	}
+	delete(l.fails, oldestKey)
 }
 
 // size returns the number of tracked keys (for tests).
