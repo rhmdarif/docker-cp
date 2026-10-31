@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # docker-cp installer for Debian/Ubuntu.
-#   curl -fsSL https://github.com/OWNER/docker-cp/releases/latest/download/install.sh | sudo bash
+#   curl -fsSL https://github.com/rhmdarif/docker-cp/releases/latest/download/install.sh | sudo bash
 #   ... | sudo bash -s -- --update
 #   ... | sudo bash -s -- --version v1.2.3
 #
@@ -8,7 +8,7 @@
 # truncated download never executes a partial script.
 set -euo pipefail
 
-REPO="${DCP_REPO:-OWNER/docker-cp}"
+REPO="${DCP_REPO:-rhmdarif/docker-cp}"
 BIN=/usr/local/bin/docker-cp
 UNIT=/etc/systemd/system/docker-cp.service
 DATA_ROOT=/opt/docker-cp

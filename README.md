@@ -8,7 +8,7 @@ di VPS kecil (1-2 GB RAM). Target OS: Debian dan Ubuntu (amd64 / arm64).
 Di VPS Debian/Ubuntu yang masih kosong, jalankan satu baris:
 
 ```bash
-curl -fsSL https://github.com/OWNER/docker-cp/releases/latest/download/install.sh | sudo bash
+curl -fsSL https://github.com/rhmdarif/docker-cp/releases/latest/download/install.sh | sudo bash
 ```
 
 Installer akan:
@@ -28,7 +28,7 @@ Data tersimpan di `/opt/docker-cp/data`, stack compose di `/opt/docker-cp/stacks
 ## Update
 
 ```bash
-curl -fsSL https://github.com/OWNER/docker-cp/releases/latest/download/install.sh | sudo bash -s -- --update
+curl -fsSL https://github.com/rhmdarif/docker-cp/releases/latest/download/install.sh | sudo bash -s -- --update
 ```
 
 Mode `--update` hanya mengganti binary dan unit, lalu me-restart `docker-cp`; data dan
