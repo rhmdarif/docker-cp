@@ -1,0 +1,3 @@
+module docker-cp
+
+go 1.27.3
