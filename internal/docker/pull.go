@@ -88,7 +88,9 @@ func RegistryAuth(configPath, image string) (string, error) {
 	}
 	registry := hubRegistry
 	first, _, hasSlash := strings.Cut(image, "/")
-	if hasSlash && (strings.ContainsAny(first, ".:") || first == "localhost") {
+	if first == "docker.io" {
+		// explicit Docker Hub prefix; config.json keys Hub by its v1 URL
+	} else if hasSlash && (strings.ContainsAny(first, ".:") || first == "localhost") {
 		registry = first
 	}
 	entry, ok := cfg.Auths[registry]

@@ -75,6 +75,10 @@ func TestRegistryAuth(t *testing.T) {
 	if d := decode(got); !strings.Contains(d, `"username":"hub"`) {
 		t.Errorf("hub: %s", d)
 	}
+	got, _ = docker.RegistryAuth(cfg, "docker.io/library/nginx")
+	if d := decode(got); !strings.Contains(d, `"username":"hub"`) || !strings.Contains(d, `index.docker.io`) {
+		t.Errorf("docker.io prefix: %s", d)
+	}
 	got, _ = docker.RegistryAuth(cfg, "myuser/app")
 	if d := decode(got); !strings.Contains(d, `"username":"hub"`) {
 		t.Errorf("hub user repo: %s", d)

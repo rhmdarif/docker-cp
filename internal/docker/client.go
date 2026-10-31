@@ -4,6 +4,7 @@ package docker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -16,7 +17,8 @@ const baseURL = "http://docker/v1.43"
 
 // Client talks to the Docker Engine API through a unix socket.
 type Client struct {
-	hc *http.Client
+	hc       *http.Client
+	sockPath string
 }
 
 // New returns a Client that dials the unix socket at sockPath.
@@ -27,7 +29,7 @@ func New(sockPath string) *Client {
 			return d.DialContext(ctx, "unix", sockPath)
 		},
 	}
-	return &Client{hc: &http.Client{Transport: tr}}
+	return &Client{hc: &http.Client{Transport: tr}, sockPath: sockPath}
 }
 
 // APIError is an error response from the Docker daemon.
@@ -42,8 +44,8 @@ func (e *APIError) Error() string {
 
 // IsNotFound reports whether err is a 404 from the daemon.
 func IsNotFound(err error) bool {
-	ae, ok := err.(*APIError)
-	return ok && ae.Status == http.StatusNotFound
+	var ae *APIError
+	return errors.As(err, &ae) && ae.Status == http.StatusNotFound
 }
 
 // do sends a request and returns the response; status >= 400 becomes *APIError.

@@ -3,6 +3,7 @@ package docker_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -143,5 +144,15 @@ func TestSpecFromInspectRoundTrip(t *testing.T) {
 	}
 	if d.ID != "abc123" || d.Name != "klien-a" || !d.Tty || d.State != "running" || !reflect.DeepEqual(d.Spec, want) {
 		t.Errorf("detail=%+v", d)
+	}
+}
+
+func TestIsNotFoundWrapped(t *testing.T) {
+	err := fmt.Errorf("ctx: %w", &docker.APIError{Status: 404, Message: "x"})
+	if !docker.IsNotFound(err) {
+		t.Fatal("wrapped 404 not matched")
+	}
+	if docker.IsNotFound(fmt.Errorf("ctx: %w", &docker.APIError{Status: 500})) || docker.IsNotFound(nil) {
+		t.Fatal("false positive")
 	}
 }
