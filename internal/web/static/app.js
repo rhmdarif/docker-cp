@@ -167,4 +167,15 @@
       form.dispatchEvent(new CustomEvent("stream:done", { bubbles: true, detail: { ok: ok } }));
     })();
   });
+  // pre[data-sse="<url>"] shows a server-sent event log stream. The stream is
+  // closed when the page is left so the server stops following the container.
+  document.querySelectorAll("pre[data-sse]").forEach(function (pre) {
+    var es = new EventSource(pre.getAttribute("data-sse"));
+    es.onmessage = function (ev) {
+      var atBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 20;
+      pre.textContent += ev.data + "\n";
+      if (atBottom) pre.scrollTop = pre.scrollHeight;
+    };
+    window.addEventListener("pagehide", function () { es.close(); });
+  });
 })();

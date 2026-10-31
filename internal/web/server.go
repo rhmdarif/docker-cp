@@ -1,6 +1,7 @@
 // Package web is the HTTP panel: routing, middleware, templates and handlers.
 //
-// Files: server.go (Server, routes, static, Caddy lock), middleware.go
+// Files: containers_handlers.go / resources_handlers.go (Docker pages),
+// forms.go (container form parsing), server.go (Server, routes, static, Caddy lock), middleware.go
 // (headers, auth, CSRF, client IP/origin helpers), render.go (templates,
 // render/fragment/flash, formatters).
 //
@@ -52,6 +53,7 @@ import (
 	"docker-cp/internal/compose"
 	"docker-cp/internal/config"
 	"docker-cp/internal/docker"
+	"docker-cp/internal/ports"
 	"docker-cp/internal/store"
 )
 
@@ -93,6 +95,10 @@ type Server struct {
 	// sysinfo sources; fixed in production, overridable in tests.
 	procRoot, diskPath string
 	cpuSample          time.Duration
+
+	// listening reports whether a host port is busy; ports.HostListening in
+	// production, stubbed in tests.
+	listening func(int) bool
 }
 
 // New parses the embedded templates and returns a Server.
@@ -108,6 +114,7 @@ func New(d Deps) (*Server, error) {
 		d: d, pages: pages, checkPassword: auth.CheckPassword,
 		loginSem: make(chan struct{}, maxLoginChecks),
 		procRoot: "/proc", diskPath: "/", cpuSample: 200 * time.Millisecond,
+		listening: ports.HostListening,
 	}, nil
 }
 
@@ -124,6 +131,8 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("POST /logout", s.logout)
 	mux.HandleFunc("GET /{$}", s.dashboard)
 	mux.HandleFunc("GET /fragments/sysinfo", s.sysinfoFragment)
+	s.containerRoutes(mux)
+	s.resourceRoutes(mux)
 	return mux
 }
 

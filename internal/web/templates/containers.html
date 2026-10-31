@@ -1,0 +1,45 @@
+{{define "title"}}Containers · docker-cp{{end}}
+{{define "container_row"}}
+<tr id="c-{{.ID}}">
+  <td>{{.Name}}{{if .Err}}<div class="banner banner-error" role="alert">{{.Err}}</div>{{end}}</td>
+  <td>{{.Image}}</td>
+  <td>{{range .Ports}}<div>{{if .HostIP}}{{.HostIP}}:{{end}}{{.HostPort}}&rarr;{{.ContainerPort}}{{if ne .Proto "tcp"}}/{{.Proto}}{{end}}</div>{{else}}<span class="muted">-</span>{{end}}</td>
+  <td><span class="dot {{if eq .State "running"}}dot-ok{{else}}dot-off{{end}}"></span> {{.Status}}</td>
+  <td>{{if .Project}}{{.Project}}{{else}}<span class="muted">-</span>{{end}}</td>
+  <td class="actions">
+    {{if ne .State "running"}}
+    <form hx-post="/containers/{{.ID}}/start" hx-target="closest tr" hx-swap="outerHTML"><button class="btn" type="submit">Start</button></form>
+    {{else}}
+    <form hx-post="/containers/{{.ID}}/stop" hx-target="closest tr" hx-swap="outerHTML" data-confirm="Hentikan container {{.Name}}?"><button class="btn" type="submit">Stop</button></form>
+    <form hx-post="/containers/{{.ID}}/restart" hx-target="closest tr" hx-swap="outerHTML"><button class="btn" type="submit">Restart</button></form>
+    {{end}}
+    <a class="btn" href="/containers/{{.ID}}/logs">Log</a>
+    <a class="btn" href="/containers/new?from={{.ID}}">Duplikat</a>
+    {{if eq .State "running"}}<button class="btn" type="button" hx-get="/containers/{{.ID}}/stats" hx-target="next .stats-out" hx-swap="innerHTML">Stats</button><span class="stats-out muted"></span>{{end}}
+    <form data-stream="#out-recreate" action="/containers/{{.ID}}/recreate" method="post" data-confirm="Buat ulang {{.Name}} dengan image terbaru?"><button class="btn" type="submit">Recreate</button></form>
+    <form hx-post="/containers/{{.ID}}/remove" hx-target="closest tr" hx-swap="outerHTML" data-confirm="Hapus container {{.Name}}?">
+      <label class="inline"><input type="checkbox" name="volumes" value="on"> hapus volume anonim</label>
+      <button class="btn btn-danger" type="submit">Hapus</button>
+    </form>
+  </td>
+</tr>
+{{end}}
+{{define "content"}}
+<h1>Containers</h1>
+<p><a class="btn btn-primary" href="/containers/new">Container baru</a></p>
+{{if .Data.Error}}
+<p class="banner banner-error">Docker tidak terhubung: {{.Data.Error}}</p>
+{{else}}
+<section class="card">
+  <table>
+    <thead><tr><th>Nama</th><th>Image</th><th>Port</th><th>Status</th><th>Stack</th><th>Aksi</th></tr></thead>
+    <tbody>
+    {{range .Data.Containers}}{{template "container_row" .}}{{else}}
+    <tr><td colspan="6" class="muted">Belum ada container.</td></tr>
+    {{end}}
+    </tbody>
+  </table>
+</section>
+{{end}}
+<pre class="stream" id="out-recreate"></pre>
+{{end}}

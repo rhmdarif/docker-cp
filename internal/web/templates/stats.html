@@ -1,0 +1,1 @@
+{{define "stats"}}{{if .Error}}<span class="muted">{{.Error}}</span>{{else}}<span>CPU {{printf "%.1f" .Stats.CPUPercent}}% &middot; RAM {{bytes .Stats.MemUsage}} / {{bytes .Stats.MemLimit}}</span>{{end}}{{end}}

@@ -109,3 +109,10 @@ dialog.confirm::backdrop { background: rgba(0, 0, 0, .4); }
   .sidebar li a[aria-current="page"] { border-bottom-color: var(--accent); }
   .main { padding: 1rem; }
 }
+
+pre.stream:empty { display: none; }
+td.actions { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+td.actions form { margin: 0; display: flex; gap: .35rem; align-items: center; }
+td.actions a.btn { text-decoration: none; }
+label.inline, label.check { flex-direction: row; align-items: center; gap: .4rem; font-weight: 400; }
+textarea { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; font-size: .9em; }
