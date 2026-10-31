@@ -1,0 +1,21 @@
+{
+  "Id": "abc123",
+  "Name": "/klien-a",
+  "State": {"Status": "running"},
+  "Config": {
+    "Tty": true,
+    "Image": "myapp:1.2",
+    "Env": ["APP_ENV=prod", "PORT=80"],
+    "Cmd": ["serve", "--fast"],
+    "Labels": {"owner": "klien-a"}
+  },
+  "HostConfig": {
+    "NetworkMode": "appnet",
+    "RestartPolicy": {"Name": "always"},
+    "PortBindings": {"80/tcp": [{"HostIp": "127.0.0.1", "HostPort": "8001"}]}
+  },
+  "Mounts": [
+    {"Type": "volume", "Name": "data-klien-a", "Source": "/var/lib/docker/volumes/data-klien-a/_data", "Destination": "/data", "RW": true},
+    {"Type": "bind", "Source": "/srv/conf", "Destination": "/etc/conf", "RW": false}
+  ]
+}
