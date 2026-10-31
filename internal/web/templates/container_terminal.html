@@ -1,0 +1,11 @@
+{{define "title"}}Terminal container · docker-cp{{end}}
+{{define "content"}}
+<h1>Terminal {{.Data.ID}}</h1>
+<link rel="stylesheet" href="/static/xterm.css">
+<script src="/static/xterm.js" defer></script>
+<script src="/static/addon-fit.js" defer></script>
+<p><a href="/containers">&larr; Containers</a></p>
+<section class="card">
+  <div class="term-pane" id="term-single" data-ws="/ws/exec/{{.Data.ID}}"></div>
+</section>
+{{end}}

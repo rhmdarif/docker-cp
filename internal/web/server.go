@@ -3,6 +3,7 @@
 // Files: containers_handlers.go / resources_handlers.go (Docker pages),
 // stacks_handlers.go, sites_handlers.go (Caddy sites, commit helper),
 // settings_handlers.go (panel settings, password),
+// terminal_handlers.go (host/container terminal pages and WebSockets),
 // forms.go (container form parsing), server.go (Server, routes, static, Caddy lock), middleware.go
 // (headers, auth, CSRF, client IP/origin helpers), render.go (templates,
 // render/fragment/flash, formatters).
@@ -138,6 +139,7 @@ func (s *Server) routes() *http.ServeMux {
 	s.stackRoutes(mux)
 	s.siteRoutes(mux)
 	s.settingsRoutes(mux)
+	s.terminalRoutes(mux)
 	return mux
 }
 

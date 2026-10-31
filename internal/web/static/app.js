@@ -1,4 +1,5 @@
 // htmx 2.0.11 (htmx.min.js vendored from https://unpkg.com/htmx.org@2.0.11/dist/htmx.min.js)
+// xterm.js @xterm/xterm 5.5.0 (xterm.js, xterm.css) and @xterm/addon-fit 0.10.0 (addon-fit.js), vendored from the npm registry tarballs
 (function () {
   "use strict";
 
@@ -192,5 +193,115 @@
       pre.textContent += "\u2014 stream berakhir \u2014\n";
     };
     window.addEventListener("pagehide", function () { es.close(); });
+  });
+  // ---- terminals (xterm.js over WebSocket) ----
+
+  // openTerminal attaches an xterm to el and bridges it to the WebSocket at
+  // wsURL (binary frames for data, JSON text frames for resize). Returns
+  // { close } which closes the socket and disposes the terminal.
+  function openTerminal(el, wsURL) {
+    var term = new window.Terminal({ cursorBlink: true, fontFamily: 'ui-monospace, Menlo, Consolas, monospace', fontSize: 14 });
+    var fit = new window.FitAddon.FitAddon();
+    term.loadAddon(fit);
+    term.open(el);
+    var scheme = location.protocol === "https:" ? "wss:" : "ws:";
+    var ws = new WebSocket(scheme + "//" + location.host + wsURL);
+    ws.binaryType = "arraybuffer";
+    var enc = new TextEncoder();
+    function sendResize() {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
+      }
+    }
+    function refit() {
+      if (el.offsetWidth === 0 || el.offsetHeight === 0) return;
+      try { fit.fit(); } catch (e) { /* not laid out yet */ }
+    }
+    ws.onopen = function () { refit(); sendResize(); term.focus(); };
+    ws.onmessage = function (ev) {
+      if (ev.data instanceof ArrayBuffer) term.write(new Uint8Array(ev.data));
+    };
+    ws.onclose = function () { term.write("\r\n\x1b[2m[koneksi ditutup]\x1b[0m\r\n"); };
+    term.onData(function (d) {
+      if (ws.readyState === WebSocket.OPEN) ws.send(enc.encode(d));
+    });
+    term.onResize(sendResize);
+    var onWin = function () { refit(); };
+    window.addEventListener("resize", onWin);
+    var ro = typeof ResizeObserver === "function" ? new ResizeObserver(onWin) : null;
+    if (ro) ro.observe(el);
+    return {
+      focus: function () { term.focus(); },
+      refit: refit,
+      close: function () {
+        window.removeEventListener("resize", onWin);
+        if (ro) ro.disconnect();
+        ws.onclose = null;
+        ws.close();
+        term.dispose();
+      }
+    };
+  }
+
+  // xterm.js is a deferred script loaded after this file, so wait for it.
+  document.addEventListener("DOMContentLoaded", function () {
+    var single = document.getElementById("term-single");
+    if (single && window.Terminal) {
+      var st = openTerminal(single, single.getAttribute("data-ws"));
+      window.addEventListener("pagehide", function () { st.close(); });
+    }
+
+    // /terminal: one tab per host shell, each with its own WebSocket.
+    var panes = document.getElementById("term-panes");
+    if (panes && window.Terminal) {
+      var tabs = document.getElementById("term-tabs");
+      var tabList = [];
+      var counter = 0;
+      var select = function (t) {
+        tabList.forEach(function (o) {
+          var on = o === t;
+          o.pane.hidden = !on;
+          o.tab.setAttribute("aria-selected", on ? "true" : "false");
+        });
+        t.term.refit();
+        t.term.focus();
+      };
+      var addTab = function () {
+        counter++;
+        var pane = document.createElement("div");
+        pane.className = "term-pane";
+        panes.appendChild(pane);
+        var tab = document.createElement("span");
+        tab.className = "term-tab btn";
+        tab.setAttribute("role", "tab");
+        var label = document.createElement("button");
+        label.type = "button";
+        label.className = "btn";
+        label.textContent = "Shell " + counter;
+        var x = document.createElement("button");
+        x.type = "button";
+        x.className = "btn";
+        x.setAttribute("aria-label", "Tutup Shell " + counter);
+        x.textContent = "\u00d7";
+        tab.appendChild(label);
+        tab.appendChild(x);
+        tabs.appendChild(tab);
+        var t = { pane: pane, tab: tab, term: null };
+        tabList.push(t);
+        t.term = openTerminal(pane, panes.getAttribute("data-ws"));
+        label.addEventListener("click", function () { select(t); });
+        x.addEventListener("click", function () {
+          t.term.close();
+          pane.remove();
+          tab.remove();
+          tabList.splice(tabList.indexOf(t), 1);
+          if (tabList.length) select(tabList[tabList.length - 1]);
+        });
+        select(t);
+      };
+      document.getElementById("term-add").addEventListener("click", addTab);
+      window.addEventListener("pagehide", function () { tabList.forEach(function (t) { t.term.close(); }); });
+      addTab();
+    }
   });
 })();
