@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"os"
+
+	"docker-cp/internal/config"
 )
 
 // version is set via -ldflags "-X main.version=...".
@@ -22,7 +24,17 @@ func run(args []string) int {
 	switch args[0] {
 	case "version":
 		fmt.Println(version)
-	case "serve", "passwd", "setup":
+	case "passwd", "setup":
+		cfg := config.FromEnv(config.Default())
+		cli := runPasswd
+		if args[0] == "setup" {
+			cli = runSetup
+		}
+		if err := cli(cfg, args[1:], os.Stdin, os.Stdout); err != nil {
+			fmt.Fprintf(os.Stderr, "%s: %v\n", args[0], err)
+			return 1
+		}
+	case "serve":
 		fmt.Fprintln(os.Stderr, args[0]+": not implemented")
 		return 1
 	default:
