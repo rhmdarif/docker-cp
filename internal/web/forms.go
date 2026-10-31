@@ -158,3 +158,77 @@ func FormatMounts(ms []docker.Mount) string {
 	}
 	return b.String()
 }
+
+// FormatCmd renders an argv as one shell-style line: arguments made only of
+// safe characters are written as-is, anything else is single-quoted.
+func FormatCmd(argv []string) string {
+	out := make([]string, len(argv))
+	for i, a := range argv {
+		if a != "" && strings.Trim(a, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_@%+=:,./-") == "" {
+			out[i] = a
+		} else {
+			out[i] = "'" + strings.ReplaceAll(a, "'", `'\''`) + "'"
+		}
+	}
+	return strings.Join(out, " ")
+}
+
+// ParseCmd splits a shell-style line into argv. It understands '...'
+// (literal), "..." (backslash escapes \" \\ \$ and \`) and backslash escapes
+// outside quotes. No variable expansion or globbing takes place.
+func ParseCmd(s string) ([]string, error) {
+	var (
+		argv  []string
+		cur   strings.Builder
+		inTok bool
+	)
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c == ' ' || c == '\t' || c == '\n' || c == '\r':
+			if inTok {
+				argv = append(argv, cur.String())
+				cur.Reset()
+				inTok = false
+			}
+		case c == '\\':
+			if i+1 >= len(s) {
+				return nil, fmt.Errorf("perintah diakhiri backslash")
+			}
+			i++
+			cur.WriteByte(s[i])
+			inTok = true
+		case c == '\'':
+			j := strings.IndexByte(s[i+1:], '\'')
+			if j < 0 {
+				return nil, fmt.Errorf("tanda kutip ' tidak ditutup")
+			}
+			cur.WriteString(s[i+1 : i+1+j])
+			i += j + 1
+			inTok = true
+		case c == '"':
+			inTok = true
+			closed := false
+			for i++; i < len(s); i++ {
+				if s[i] == '"' {
+					closed = true
+					break
+				}
+				if s[i] == '\\' && i+1 < len(s) && strings.IndexByte("\"\\$`", s[i+1]) >= 0 {
+					i++
+				}
+				cur.WriteByte(s[i])
+			}
+			if !closed {
+				return nil, fmt.Errorf("tanda kutip \" tidak ditutup")
+			}
+		default:
+			cur.WriteByte(c)
+			inTok = true
+		}
+	}
+	if inTok {
+		argv = append(argv, cur.String())
+	}
+	return argv, nil
+}

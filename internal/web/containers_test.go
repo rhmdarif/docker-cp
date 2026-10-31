@@ -19,7 +19,7 @@ import (
 
 const listJSON = `[{"Id":"abc","Names":["/klien-a"],"Image":"nginx:1","State":"running","Status":"Up 1 hour","Ports":[{"IP":"0.0.0.0","PrivatePort":80,"PublicPort":8001,"Type":"tcp"}],"Labels":{"com.docker.compose.project":"web"}}]`
 
-const inspectJSON = `{"Id":"abc","Name":"/klien-a","State":{"Status":"running"},"Config":{"Image":"nginx:1","Tty":false},` +
+const inspectJSON = `{"Id":"abc","Name":"/klien-a","State":{"Status":"running"},"Config":{"Image":"nginx:1","Tty":false,"Cmd":["nginx","-g","daemon off;"]},` +
 	`"HostConfig":{"RestartPolicy":{"Name":"unless-stopped"},"NetworkMode":"default","PortBindings":{"80/tcp":[{"HostIp":"","HostPort":"8001"}]}},` +
 	`"Mounts":[{"Type":"volume","Name":"data","Source":"/var/lib/docker/volumes/data/_data","Destination":"/data","RW":true},` +
 	`{"Type":"bind","Source":"/srv/x","Destination":"/x","RW":true}]}`
@@ -54,7 +54,7 @@ func TestNewFromDuplicate(t *testing.T) {
 	f.Handle("GET /v1.43/containers/abc/json", func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, inspectJSON) })
 	rec := get(t, h, "/containers/new?from=abc")
 	body := rec.Body.String()
-	for _, want := range []string{`value="klien-a-2"`, "8002:80", "data-klien-a-2", "bind mount dipakai bersama sumber"} {
+	for _, want := range []string{`value="klien-a-2"`, "8002:80", "data-klien-a-2", "bind mount dipakai bersama sumber", `nginx -g &#39;daemon off;&#39;`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("body missing %q:\n%s", want, body)
 		}
@@ -115,6 +115,22 @@ func TestCreateContainer(t *testing.T) {
 	}
 	if loads != 1 {
 		t.Errorf("caddy /load calls = %d, calls %v", loads, fc.Calls())
+	}
+}
+
+func TestCreateQuotedCmd(t *testing.T) {
+	_, f, _, h := newTestServer(t)
+	rec := fakeCreateFlow(f)
+	c, csrf := login(t, h)
+	form := url.Values{"name": {"web1"}, "image": {"nginx"}, "cmd": {`nginx -g 'daemon off;'`}}
+	request(t, h, "POST", "/containers", form, c, csrf)
+	rec.mu.Lock()
+	defer rec.mu.Unlock()
+	if !strings.Contains(rec.body, `"Cmd":["nginx","-g","daemon off;"]`) {
+		t.Fatalf("create body %s", rec.body)
+	}
+	if resp := request(t, h, "POST", "/containers", url.Values{"name": {"web2"}, "image": {"nginx"}, "cmd": {`sh -c "x`}}, c, csrf); resp.Code != http.StatusBadRequest {
+		t.Fatalf("unterminated quote: status %d", resp.Code)
 	}
 }
 

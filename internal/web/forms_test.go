@@ -70,3 +70,41 @@ func TestFormatRoundTrip(t *testing.T) {
 		t.Fatalf("FormatEnv = %q", s)
 	}
 }
+
+func TestCmdRoundTrip(t *testing.T) {
+	for _, cmd := range [][]string{
+		{"nginx", "-g", "daemon off;"},
+		{"sh", "-c", `echo "it's" \ok`},
+		{"a", ""},
+		{"plain"},
+		nil,
+	} {
+		got, err := ParseCmd(FormatCmd(cmd))
+		if err != nil || !reflect.DeepEqual(got, cmd) {
+			t.Errorf("round trip %q via %q: got %q, %v", cmd, FormatCmd(cmd), got, err)
+		}
+	}
+	if s := FormatCmd([]string{"nginx", "-g", "daemon off;"}); s != `nginx -g 'daemon off;'` {
+		t.Errorf("FormatCmd = %q", s)
+	}
+}
+
+func TestParseCmd(t *testing.T) {
+	for in, want := range map[string][]string{
+		`nginx -g "daemon off;"`: {"nginx", "-g", "daemon off;"},
+		`a\ b 'c d' "e\"f" g\\h`: {"a b", "c d", `e"f`, `g\h`},
+		"  x\t y\n":              {"x", "y"},
+		`'a'"b"c`:                {"abc"},
+		`"$HOME" '\n'`:           {"$HOME", `\n`},
+	} {
+		got, err := ParseCmd(in)
+		if err != nil || !reflect.DeepEqual(got, want) {
+			t.Errorf("ParseCmd(%q) = %q, %v; want %q", in, got, err, want)
+		}
+	}
+	for _, bad := range []string{`"open`, `'open`, `trail\`} {
+		if _, err := ParseCmd(bad); err == nil {
+			t.Errorf("ParseCmd(%q) = nil error", bad)
+		}
+	}
+}

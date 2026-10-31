@@ -137,7 +137,7 @@ func (s *Server) containerNew(w http.ResponseWriter, r *http.Request) {
 		spec := ports.Duplicate(d.Spec, ports.SuggestName(d.Spec.Name, func(n string) bool { return names[n] }), next)
 		form.Name, form.Image, form.Restart, form.Network = spec.Name, spec.Image, spec.Restart, spec.Network
 		form.Ports, form.Env, form.Mounts = FormatPorts(spec.Ports), FormatEnv(spec.Env), FormatMounts(spec.Mounts)
-		form.Cmd = strings.Join(spec.Cmd, " ")
+		form.Cmd = FormatCmd(spec.Cmd)
 		for _, m := range spec.Mounts {
 			if m.Type == "bind" {
 				form.Warnings = append(form.Warnings, fmt.Sprintf("Peringatan: bind mount dipakai bersama sumber: %s (%s).", m.Source, d.Spec.Name))
@@ -158,7 +158,7 @@ func parseContainerForm(r *http.Request) (docker.CreateSpec, containerForm, erro
 		Restart: r.PostFormValue("restart"), Network: strings.TrimSpace(r.PostFormValue("network")),
 		Cmd: r.PostFormValue("cmd"), PublishAll: r.PostFormValue("publish_all") == "on",
 	}
-	spec := docker.CreateSpec{Name: f.Name, Image: f.Image, Restart: f.Restart, Network: f.Network, Cmd: strings.Fields(f.Cmd)}
+	spec := docker.CreateSpec{Name: f.Name, Image: f.Image, Restart: f.Restart, Network: f.Network}
 	if !containerNameRe.MatchString(f.Name) {
 		return spec, f, fmt.Errorf("nama container harus cocok ^[a-zA-Z0-9][a-zA-Z0-9_.-]+$")
 	}
@@ -171,6 +171,9 @@ func parseContainerForm(r *http.Request) (docker.CreateSpec, containerForm, erro
 		return spec, f, fmt.Errorf("kebijakan restart %q tidak dikenal", f.Restart)
 	}
 	var err error
+	if spec.Cmd, err = ParseCmd(f.Cmd); err != nil {
+		return spec, f, fmt.Errorf("perintah: %w", err)
+	}
 	if spec.Ports, err = ParsePorts(f.Ports); err != nil {
 		return spec, f, fmt.Errorf("port: %w", err)
 	}
