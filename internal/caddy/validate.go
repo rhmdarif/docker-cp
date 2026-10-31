@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode"
 
 	"docker-cp/internal/store"
 )
@@ -66,8 +67,39 @@ func ValidateDomains(domains []string, siteID string, all []store.Site, panelDom
 
 // ValidateCustom checks that custom directives cannot leave their site block.
 func ValidateCustom(custom string) error {
-	_, err := scan(custom)
-	return err
+	toks, err := scan(custom)
+	if err != nil {
+		return err
+	}
+	if hasImport(toks) {
+		return errImport
+	}
+	return nil
+}
+
+var errImport = errors.New("import tidak diizinkan")
+
+// ValidateEmail accepts an empty address or a single plain token with exactly
+// one "@".
+func ValidateEmail(email string) error {
+	if email == "" {
+		return nil
+	}
+	if strings.Count(email, "@") != 1 || unsafeToken(email) || strings.Contains(email, ",") {
+		return errors.New("email tidak valid")
+	}
+	if strings.HasPrefix(email, "@") || strings.HasSuffix(email, "@") {
+		return errors.New("email tidak valid")
+	}
+	return nil
+}
+
+// unsafeToken reports whether s contains anything that could change how
+// Caddy tokenizes the line it is written into.
+func unsafeToken(s string) bool {
+	return s == "" || strings.ContainsFunc(s, func(r rune) bool {
+		return unicode.IsSpace(r) || strings.ContainsRune("{}\"`#\\", r)
+	})
 }
 
 // ValidateManualText checks the raw text of a manual site block: exactly one
@@ -82,8 +114,8 @@ func ValidateManualText(block string) error {
 	}
 	blocks, addrs := 0, 0
 	for _, t := range toks {
-		if !t.quoted && t.text == "import" {
-			return errors.New("import tidak diizinkan")
+		if t.text == "import" {
+			return errImport
 		}
 		if t.depth == 0 {
 			if t.endDepth > 0 {
@@ -169,11 +201,24 @@ func checkHost(h string, others map[string]bool) error {
 	if others[h] {
 		return fmt.Errorf("domain sudah dipakai site lain: %s", h)
 	}
-	if suffix, ok := strings.CutPrefix(h, "*."); ok {
-		for o := range others {
-			if label, ok := strings.CutSuffix(o, "."+suffix); ok && label != "" && !strings.Contains(label, ".") {
-				return fmt.Errorf("domain sudah dipakai site lain: %s (cocok dengan %s)", o, h)
+	if !strings.Contains(h, "*") {
+		return nil
+	}
+	hl := strings.Split(h, ".")
+	for o := range others {
+		ol := strings.Split(o, ".")
+		if len(ol) != len(hl) {
+			continue
+		}
+		match := true
+		for i := range hl {
+			if hl[i] != "*" && hl[i] != ol[i] {
+				match = false
+				break
 			}
+		}
+		if match {
+			return fmt.Errorf("domain sudah dipakai site lain: %s (cocok dengan %s)", o, h)
 		}
 	}
 	return nil

@@ -21,12 +21,16 @@ func Generate(st store.State, resolve Resolver) (caddyfile string, warnings []st
 	var blocks []string
 
 	global := "{\n\tadmin localhost:2019\n"
-	if st.Settings.ACMEEmail != "" {
+	if err := ValidateEmail(st.Settings.ACMEEmail); err != nil {
+		warnings = append(warnings, fmt.Sprintf("email ACME diabaikan: %v", err))
+	} else if st.Settings.ACMEEmail != "" {
 		global += "\temail " + st.Settings.ACMEEmail + "\n"
 	}
 	blocks = append(blocks, global+"}")
 
-	if st.Settings.PanelDomain != "" {
+	if pd := st.Settings.PanelDomain; pd != "" && unsafeDomain(pd) {
+		warnings = append(warnings, fmt.Sprintf("domain panel diabaikan: tidak valid: %q", pd))
+	} else if pd != "" {
 		blocks = append(blocks, fmt.Sprintf("%s {\n\treverse_proxy 127.0.0.1:%d\n}", st.Settings.PanelDomain, st.Settings.PanelPort))
 	}
 
@@ -39,6 +43,10 @@ func Generate(st store.State, resolve Resolver) (caddyfile string, warnings []st
 		}
 		if len(s.Domains) == 0 {
 			warnings = append(warnings, fmt.Sprintf("site %s: tidak ada domain", s.ID))
+			continue
+		}
+		if bad := firstUnsafe(s.Domains); bad != "" {
+			warnings = append(warnings, fmt.Sprintf("site %s dilewati: domain tidak valid: %q", s.ID, bad))
 			continue
 		}
 		body := unavailableLine
@@ -65,4 +73,15 @@ func Generate(st store.State, resolve Resolver) (caddyfile string, warnings []st
 		blocks = append(blocks, sb.String())
 	}
 	return strings.Join(blocks, "\n\n") + "\n", warnings
+}
+
+func unsafeDomain(d string) bool { return unsafeToken(d) || strings.Contains(d, ",") }
+
+func firstUnsafe(ds []string) string {
+	for _, d := range ds {
+		if unsafeDomain(d) {
+			return d
+		}
+	}
+	return ""
 }

@@ -137,3 +137,58 @@ func TestValidateManualAdapted(t *testing.T) {
 		t.Error("invalid json should fail")
 	}
 }
+
+func TestValidateCustomCaddyTokenization(t *testing.T) {
+	bad := []string{
+		"respond a{\n}\nevil.com {\n\treverse_proxy localhost:2019\n}\nx.com {\n\trespond b}",
+		"respond \\\"\n\"\n}\nevil.com {\n\treverse_proxy localhost:2019\n}\nx.com {\n\trespond x\"",
+		"import /etc/caddy/other",
+		"header {\n\timport snip\n}",
+	}
+	for _, s := range bad {
+		if err := ValidateCustom(s); err == nil {
+			t.Errorf("expected error for %q", s)
+		}
+	}
+	for _, s := range []string{"respond {remote_host}", `respond "}"`, "header X-Ip {http.request.remote_host}"} {
+		if err := ValidateCustom(s); err != nil {
+			t.Errorf("%q: %v", s, err)
+		}
+	}
+}
+
+func TestValidateManualTextInjection(t *testing.T) {
+	s := "a.com {\n\trespond a{\n}\n:80 {\n\trespond hijack\n}\nx.com {\n\trespond b}\n}"
+	if err := ValidateManualText(s); err == nil {
+		t.Fatal("expected error")
+	}
+	if err := ValidateManualText("a.com {\n\trespond {remote_host}\n}"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAdaptedWildcardLabels(t *testing.T) {
+	for _, h := range []string{"*.*.com", "a.*.com", "*.klien.com"} {
+		err := ValidateManualAdapted(adaptedWith(`[{"match":[{"host":["`+h+`"]}]}]`), []string{"a.klien.com"})
+		if err == nil {
+			t.Errorf("%s should collide", h)
+		}
+	}
+	err := ValidateManualAdapted(adaptedWith(`[{"match":[{"host":["*.com"]}]}]`), []string{"a.klien.com"})
+	if err != nil {
+		t.Errorf("*.com must not match a.klien.com: %v", err)
+	}
+}
+
+func TestValidateEmail(t *testing.T) {
+	for _, e := range []string{"", "a@b.c"} {
+		if err := ValidateEmail(e); err != nil {
+			t.Errorf("%q: %v", e, err)
+		}
+	}
+	for _, e := range []string{"a b@c.d", "a@b@c", "ab", "a@b.c\n}", "a{@b.c", "\"a\"@b.c", "a#@b.c"} {
+		if ValidateEmail(e) == nil {
+			t.Errorf("%q should fail", e)
+		}
+	}
+}

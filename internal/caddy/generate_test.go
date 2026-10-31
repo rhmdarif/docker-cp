@@ -91,3 +91,20 @@ func TestGenerateSkipsSiteWithoutDomains(t *testing.T) {
 		t.Fatalf("got %q warns %v", got, warns)
 	}
 }
+
+func TestGenerateDefensive(t *testing.T) {
+	st := store.State{
+		Settings: store.Settings{PanelDomain: "p.com {", PanelPort: 8800, ACMEEmail: "a@b.c\n}\nevil.com {"},
+		Sites: []store.Site{
+			{ID: "1", Domains: []string{"a.com\n}\nevil.com {"}, Target: store.Target{Host: "1.2.3.4:80"}},
+			{ID: "2", Domains: []string{"ok.com"}, Target: store.Target{Host: "1.2.3.4:80"}},
+		},
+	}
+	got, warns := Generate(st, fakeResolve)
+	if strings.Contains(got, "evil") || strings.Contains(got, "p.com") || strings.Contains(got, "email") {
+		t.Fatalf("unsafe output:\n%s", got)
+	}
+	if !strings.Contains(got, "ok.com {") || len(warns) != 3 {
+		t.Fatalf("got %s warns %v", got, warns)
+	}
+}
