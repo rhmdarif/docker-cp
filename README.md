@@ -17,7 +17,7 @@ Installer akan:
 2. mengunduh rilis terbaru, memverifikasi sha256 terhadap `checksums.txt`, lalu memasang
    `/usr/local/bin/docker-cp` dan unit systemd `docker-cp.service`;
 3. menanyakan password admin (dibaca dari terminal, tidak ditampilkan), domain panel, dan
-   email ACME (keduanya opsional);
+   email ACME (keduanya opsional; ditanyakan ulang bila tidak valid);
 4. menawarkan konfigurasi ufw (default: tidak);
 5. menjalankan layanan. Panel dapat dibuka di `http://<IP-server>:8800`.
 
@@ -41,6 +41,13 @@ sudo docker-cp passwd
 ```
 
 Password baru dibaca dari baris pertama stdin, contoh: `printf '%s\n' 'passwordbaru' | sudo docker-cp passwd`.
+
+Panel menyimpan state di memori, jadi perubahan baru berlaku setelah panel di-restart.
+Bila dijalankan sebagai root, `passwd` (dan `setup`) otomatis menjalankan
+`systemctl try-restart docker-cp` dan mencetak "Panel di-restart agar perubahan berlaku".
+Bila restart gagal atau perintah dijalankan tanpa root, restart manual:
+`sudo systemctl restart docker-cp`. Tanpa restart, panel yang sedang berjalan akan
+menimpa password baru saat menyimpan perubahan berikutnya.
 
 ## Catatan
 

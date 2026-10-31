@@ -155,9 +155,40 @@ read_password() {
   done
 }
 
+# panel_port prints panel_port from state.json, or 8800.
+panel_port() {
+  local p=""
+  if [ -r "$STATE" ]; then
+    p="$(grep -o '"panel_port"[[:space:]]*:[[:space:]]*[0-9]*' "$STATE" | head -n1 | sed 's/.*://; s/[[:space:]]//g' || true)"
+  fi
+  case "$p" in '' | *[!0-9]*) p=8800 ;; esac
+  printf '%s\n' "$p"
+}
+
+# run_setup: creates the admin account with PW, prompting for the panel
+# domain and ACME email until docker-cp accepts both; sets PANEL_DOMAIN.
+run_setup() {
+  local args
+  while :; do
+    printf 'Domain panel (opsional, mis. panel.example.com): ' >/dev/tty
+    IFS= read -r PANEL_DOMAIN </dev/tty || true
+    printf 'Email ACME (opsional): ' >/dev/tty
+    IFS= read -r ACME_EMAIL </dev/tty || true
+    args=(setup --username admin)
+    [ -z "$PANEL_DOMAIN" ] || args+=(--panel-domain "$PANEL_DOMAIN")
+    [ -z "$ACME_EMAIL" ] || args+=(--acme-email "$ACME_EMAIL")
+    log "Membuat akun admin"
+    if printf '%s\n' "$PW" | "$BIN" "${args[@]}"; then
+      return
+    fi
+    echo "Domain atau email tidak valid, coba lagi." >/dev/tty
+  done
+}
+
 configure_ufw() {
-  local ans="" port ports
-  printf 'Atur firewall ufw (izinkan SSH, 80, 443, 8800)? [y/N]: ' >/dev/tty
+  local ans="" port ports panel
+  panel="$(panel_port)"
+  printf 'Atur firewall ufw (izinkan SSH, 80, 443, %s)? [y/N]: ' "$panel" >/dev/tty
   IFS= read -r ans </dev/tty || true
   case "$ans" in
     y | Y | yes | YES) ;;
@@ -172,7 +203,7 @@ configure_ufw() {
   done
   ufw allow 80/tcp
   ufw allow 443/tcp
-  ufw allow 8800/tcp
+  ufw allow "${panel}/tcp"
   ufw --force enable
 }
 
@@ -219,16 +250,14 @@ main() {
   if [ "$UPDATE" -eq 0 ]; then
     local PW=""
     read_password
-    printf 'Domain panel (opsional, mis. panel.example.com): ' >/dev/tty
-    IFS= read -r PANEL_DOMAIN </dev/tty || true
-    printf 'Email ACME (opsional): ' >/dev/tty
-    IFS= read -r ACME_EMAIL </dev/tty || true
-
-    log "Membuat akun admin"
-    printf '%s\n' "$PW" | "$BIN" setup --username admin --panel-domain "$PANEL_DOMAIN" --acme-email "$ACME_EMAIL"
+    run_setup
     PW=""
     configure_ufw
-    systemctl enable --now caddy docker docker-cp
+    systemctl enable --now caddy docker
+    # restart, not just --now: on a re-setup the running panel must reload
+    # state.json or it would overwrite the new admin on its next save.
+    systemctl enable docker-cp
+    systemctl restart docker-cp
   else
     systemctl restart docker-cp
   fi
@@ -237,7 +266,7 @@ main() {
   ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
   echo
   log "docker-cp ${VERSION} berjalan"
-  echo "    URL:    http://${ip:-<ip-server>}:8800"
+  echo "    URL:    http://${ip:-<ip-server>}:$(panel_port)"
   if [ -n "$PANEL_DOMAIN" ]; then
     echo "    Domain: https://${PANEL_DOMAIN}"
   fi

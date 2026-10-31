@@ -48,10 +48,10 @@ func Generate(ctx context.Context, st store.State, resolve Resolver) (caddyfile 
 	}
 	blocks = append(blocks, global+"}")
 
-	if pd := st.Settings.PanelDomain; pd != "" && unsafeDomain(pd) {
-		warnings = append(warnings, fmt.Sprintf("domain panel diabaikan: tidak valid: %q", pd))
+	if pd, err := panelDomain(st); err != nil {
+		warnings = append(warnings, fmt.Sprintf("domain panel diabaikan: %v", err))
 	} else if pd != "" {
-		blocks = append(blocks, fmt.Sprintf("%s {\n\treverse_proxy 127.0.0.1:%d\n}", st.Settings.PanelDomain, st.Settings.PanelPort))
+		blocks = append(blocks, fmt.Sprintf("%s {\n\treverse_proxy 127.0.0.1:%d\n}", pd, st.Settings.PanelPort))
 	}
 
 	for _, s := range st.Sites {
@@ -116,6 +116,20 @@ func Generate(ctx context.Context, st store.State, resolve Resolver) (caddyfile 
 		blocks = append(blocks, sb.String())
 	}
 	return strings.Join(blocks, "\n\n") + "\n", warnings, nil
+}
+
+// panelDomain returns the normalized panel domain ("" when unset), checked
+// with the same rules as site domains.
+func panelDomain(st store.State) (string, error) {
+	pd := st.Settings.PanelDomain
+	if pd == "" {
+		return "", nil
+	}
+	ds, err := ValidateDomains([]string{pd}, "", nil, "")
+	if err != nil {
+		return "", err
+	}
+	return ds[0], nil
 }
 
 func unsafeDomain(d string) bool { return unsafeToken(d) || strings.Contains(d, ",") }

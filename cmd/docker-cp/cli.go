@@ -6,12 +6,33 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
+	"os/exec"
 	"strings"
 
 	"docker-cp/internal/auth"
+	"docker-cp/internal/caddy"
 	"docker-cp/internal/config"
 	"docker-cp/internal/store"
 )
+
+// restartPanel restarts a running panel so it reloads state.json (the panel
+// keeps state in memory and would overwrite the CLI's change on its next
+// save). It reports whether a restart was attempted: only as root and only
+// when systemctl exists. Tests replace it.
+var restartPanel = func() (bool, error) {
+	if os.Geteuid() != 0 {
+		return false, nil
+	}
+	if _, err := exec.LookPath("systemctl"); err != nil {
+		return false, nil
+	}
+	out, err := exec.Command("systemctl", "try-restart", "docker-cp").CombinedOutput()
+	if err != nil {
+		return true, fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return true, nil
+}
 
 // runPasswd sets the admin credentials; the password is the first line of stdin.
 func runPasswd(cfg config.Config, args []string, stdin io.Reader, stdout io.Writer) error {
@@ -24,7 +45,9 @@ func runPasswd(cfg config.Config, args []string, stdin io.Reader, stdout io.Writ
 	return setAdmin(cfg, *username, stdin, stdout, nil)
 }
 
-// runSetup is runPasswd plus the panel domain and ACME email settings.
+// runSetup is runPasswd plus the panel domain and ACME email settings. A flag
+// that is not given leaves the stored value unchanged; an explicitly empty
+// value clears it.
 func runSetup(cfg config.Config, args []string, stdin io.Reader, stdout io.Writer) error {
 	fs := flag.NewFlagSet("setup", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
@@ -34,9 +57,28 @@ func runSetup(cfg config.Config, args []string, stdin io.Reader, stdout io.Write
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+	set := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { set[f.Name] = true })
+
+	pd := strings.TrimSpace(*domain)
+	if pd != "" {
+		ds, err := caddy.ValidateDomains([]string{pd}, "", nil, "")
+		if err != nil {
+			return fmt.Errorf("--panel-domain: %w", err)
+		}
+		pd = ds[0]
+	}
+	em := strings.TrimSpace(*email)
+	if err := caddy.ValidateEmail(em); err != nil {
+		return fmt.Errorf("--acme-email: %w", err)
+	}
 	return setAdmin(cfg, *username, stdin, stdout, func(s *store.State) {
-		s.Settings.PanelDomain = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(*domain)), ".")
-		s.Settings.ACMEEmail = strings.TrimSpace(*email)
+		if set["panel-domain"] {
+			s.Settings.PanelDomain = pd
+		}
+		if set["acme-email"] {
+			s.Settings.ACMEEmail = em
+		}
 	})
 }
 
@@ -65,5 +107,13 @@ func setAdmin(cfg config.Config, username string, stdin io.Reader, stdout io.Wri
 		return err
 	}
 	fmt.Fprintf(stdout, "admin %q saved\n", username)
+	switch tried, err := restartPanel(); {
+	case err != nil:
+		fmt.Fprintf(stdout, "Gagal me-restart panel (%v); jalankan: sudo systemctl restart docker-cp\n", err)
+	case tried:
+		fmt.Fprintln(stdout, "Panel di-restart agar perubahan berlaku")
+	default:
+		fmt.Fprintln(stdout, "Jika panel sedang berjalan, restart agar perubahan berlaku: sudo systemctl restart docker-cp")
+	}
 	return nil
 }

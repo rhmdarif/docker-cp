@@ -53,8 +53,8 @@ func (e *WriteError) Unwrap() error { return e.Err }
 
 func expectedHosts(st store.State) []string {
 	var out []string
-	if st.Settings.PanelDomain != "" {
-		out = append(out, st.Settings.PanelDomain)
+	if pd, err := panelDomain(st); err == nil && pd != "" {
+		out = append(out, pd)
 	}
 	for _, s := range st.Sites {
 		out = append(out, s.Domains...)

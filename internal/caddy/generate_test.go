@@ -203,3 +203,16 @@ func TestGenerateResolveDeadline(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func TestGenerateSkipsInvalidPanelDomain(t *testing.T) {
+	for _, pd := range []string{"*.example.com", "under_score.com", "localhost", "a.com/x"} {
+		got, warns := gen(t, store.State{Settings: store.Settings{PanelDomain: pd, PanelPort: 8800}}, fakeResolve)
+		if strings.Contains(got, "reverse_proxy") || len(warns) != 1 || !strings.Contains(warns[0], "domain panel diabaikan") {
+			t.Errorf("%q: got %q warns %v", pd, got, warns)
+		}
+	}
+	got, _ := gen(t, store.State{Settings: store.Settings{PanelDomain: "Panel.Example.com.", PanelPort: 8800}}, fakeResolve)
+	if !strings.Contains(got, "panel.example.com {\n\treverse_proxy 127.0.0.1:8800\n}") {
+		t.Errorf("normalized panel block missing:\n%s", got)
+	}
+}
