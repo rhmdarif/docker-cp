@@ -37,6 +37,7 @@ func planRecreate(raw []byte) (recreatePlan, error) {
 		Name            string
 		Config          map[string]json.RawMessage
 		HostConfig      json.RawMessage
+		Mounts          []struct{ Type, Name, Destination string }
 		NetworkSettings struct {
 			Networks map[string]map[string]json.RawMessage
 		}
@@ -105,7 +106,11 @@ func planRecreate(raw []byte) (recreatePlan, error) {
 		body[k] = v
 	}
 	if len(in.HostConfig) > 0 {
-		body["HostConfig"] = in.HostConfig
+		hcRaw, err := withAnonymousVolumes(in.HostConfig, in.Mounts)
+		if err != nil {
+			return recreatePlan{}, err
+		}
+		body["HostConfig"] = hcRaw
 	}
 	nc, err := json.Marshal(map[string]any{"EndpointsConfig": endpoints})
 	if err != nil {
@@ -116,6 +121,54 @@ func planRecreate(raw []byte) (recreatePlan, error) {
 		return recreatePlan{}, err
 	}
 	return p, nil
+}
+
+// withAnonymousVolumes adds a named volume mount to HostConfig.Mounts for each
+// volume in the inspect Mounts whose destination HostConfig does not already
+// bind or mount. These are the volumes Docker created for the image's VOLUME
+// lines; without them the new container would get fresh empty volumes.
+func withAnonymousVolumes(hostConfig json.RawMessage, mounts []struct{ Type, Name, Destination string }) (json.RawMessage, error) {
+	hc := map[string]json.RawMessage{}
+	if err := json.Unmarshal(hostConfig, &hc); err != nil {
+		return nil, fmt.Errorf("HostConfig: %w", err)
+	}
+	covered := map[string]bool{}
+	var binds []string
+	json.Unmarshal(hc["Binds"], &binds)
+	for _, b := range binds {
+		if parts := strings.Split(b, ":"); len(parts) >= 2 {
+			covered[parts[1]] = true
+		}
+	}
+	var existing []json.RawMessage
+	json.Unmarshal(hc["Mounts"], &existing)
+	for _, m := range existing {
+		var t struct{ Target string }
+		json.Unmarshal(m, &t)
+		covered[t.Target] = true
+	}
+	added := false
+	for _, m := range mounts {
+		if m.Type != "volume" || m.Name == "" || covered[m.Destination] {
+			continue
+		}
+		b, err := json.Marshal(map[string]string{"Type": "volume", "Source": m.Name, "Target": m.Destination})
+		if err != nil {
+			return nil, err
+		}
+		existing = append(existing, b)
+		covered[m.Destination] = true
+		added = true
+	}
+	if !added {
+		return hostConfig, nil
+	}
+	b, err := json.Marshal(existing)
+	if err != nil {
+		return nil, err
+	}
+	hc["Mounts"] = b
+	return json.Marshal(hc)
 }
 
 // createRaw posts a prepared create body and returns the new container's ID.

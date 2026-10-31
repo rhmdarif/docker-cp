@@ -207,3 +207,73 @@ func TestRecreatePreservesRawConfig(t *testing.T) {
 		t.Errorf("connect: %v", connect)
 	}
 }
+
+// recreateBody runs Recreate against the given inspect JSON and returns the
+// create request body.
+func recreateBody(t *testing.T, inspect string) map[string]any {
+	t.Helper()
+	f := dockertest.New(t)
+	var mu sync.Mutex
+	var createBody []byte
+	f.Handle("GET /v1.43/containers/old1/json", func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, inspect) })
+	f.Handle("POST /v1.43/images/create", func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, `{"status":"Done"}`) })
+	for _, p := range []string{"POST /v1.43/containers/old1/stop", "POST /v1.43/containers/old1/rename", "POST /v1.43/containers/new1/start", "DELETE /v1.43/containers/old1"} {
+		f.Handle(p, func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(204) })
+	}
+	f.Handle("POST /v1.43/containers/create", func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		createBody, _ = io.ReadAll(r.Body)
+		mu.Unlock()
+		w.WriteHeader(201)
+		io.WriteString(w, `{"Id":"new1"}`)
+	})
+	if _, err := f.Client().Recreate(context.Background(), "old1", "", nil); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	var body map[string]any
+	if err := json.Unmarshal(createBody, &body); err != nil {
+		t.Fatalf("%v: %s", err, createBody)
+	}
+	return body
+}
+
+func volumeMounts(t *testing.T, body map[string]any) []map[string]any {
+	t.Helper()
+	hc, _ := body["HostConfig"].(map[string]any)
+	var out []map[string]any
+	for _, m := range hc["Mounts"].([]any) {
+		out = append(out, m.(map[string]any))
+	}
+	return out
+}
+
+func TestRecreateKeepsAnonymousVolumes(t *testing.T) {
+	raw, err := os.ReadFile("testdata/inspect_anon_volume.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mounts := volumeMounts(t, recreateBody(t, string(raw)))
+	want := []map[string]any{
+		{"Type": "volume", "Source": "abc123anon", "Target": "/var/lib/postgresql/data"},
+		{"Type": "volume", "Source": "extra456anon", "Target": "/var/lib/other"},
+	}
+	if !reflect.DeepEqual(mounts, want) {
+		t.Errorf("mounts = %v, want %v", mounts, want)
+	}
+}
+
+func TestRecreateDoesNotDuplicateBoundVolumes(t *testing.T) {
+	inspect := `{"Id":"old1","Name":"/app","State":{"Status":"running"},"Config":{"Image":"myapp:1"},
+"HostConfig":{"NetworkMode":"default","Binds":["named:/data"],"Mounts":[{"Type":"volume","Source":"m1","Target":"/mnt1"}]},
+"Mounts":[{"Type":"volume","Name":"named","Destination":"/data"},{"Type":"volume","Name":"m1","Destination":"/mnt1"},{"Type":"bind","Source":"/h","Destination":"/b"}]}`
+	hc := recreateBody(t, inspect)["HostConfig"].(map[string]any)
+	ms := hc["Mounts"].([]any)
+	if len(ms) != 1 {
+		t.Errorf("mounts = %v, want only the original one", ms)
+	}
+	if b := hc["Binds"].([]any); len(b) != 1 {
+		t.Errorf("binds = %v", b)
+	}
+}
