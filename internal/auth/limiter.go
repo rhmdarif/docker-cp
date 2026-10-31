@@ -53,3 +53,18 @@ func (l *Limiter) Reset(key string) {
 	delete(l.fails, key)
 	l.mu.Unlock()
 }
+
+// Take checks and records an attempt for key under one lock. It returns
+// false, recording nothing, when max attempts already fall in the window.
+// Use it before the expensive check so concurrent requests cannot all slip
+// past a separate Allow; call Reset on success.
+func (l *Limiter) Take(key string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	recent := l.recent(key)
+	if len(recent) >= l.max {
+		return false
+	}
+	l.fails[key] = append(recent, l.now())
+	return true
+}

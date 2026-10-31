@@ -2,6 +2,8 @@ package auth
 
 import (
 	"errors"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -90,5 +92,51 @@ func TestLimiter(t *testing.T) {
 	l.Reset("ip")
 	if !l.Allow("ip") {
 		t.Error("should be allowed after Reset")
+	}
+}
+
+func TestLimiterTake(t *testing.T) {
+	c := &clock{time.Unix(1000, 0)}
+	l := NewLimiter(5, 15*time.Minute, c.now)
+	for i := 0; i < 5; i++ {
+		if !l.Take("ip") {
+			t.Fatalf("Take refused at %d", i)
+		}
+	}
+	if l.Take("ip") || l.Allow("ip") {
+		t.Error("6th Take should be refused")
+	}
+	if !l.Take("other") {
+		t.Error("other key refused")
+	}
+	l.Reset("ip")
+	if !l.Take("ip") {
+		t.Error("refused after Reset")
+	}
+	for i := 0; i < 4; i++ {
+		l.Take("ip")
+	}
+	c.t = c.t.Add(15*time.Minute + time.Second)
+	if !l.Take("ip") {
+		t.Error("refused after window")
+	}
+}
+
+func TestLimiterTakeConcurrent(t *testing.T) {
+	l := NewLimiter(5, time.Hour, time.Now)
+	var wg sync.WaitGroup
+	var granted atomic.Int32
+	for i := 0; i < 50; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if l.Take("ip") {
+				granted.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+	if g := granted.Load(); g != 5 {
+		t.Fatalf("granted %d, want 5", g)
 	}
 }

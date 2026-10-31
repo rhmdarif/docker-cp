@@ -80,8 +80,13 @@
 
   // streamPost POSTs formData to url with the CSRF header and appends the
   // response body to a <pre> (targetEl itself, or one created inside it) as
-  // it arrives. Resolves to true when the response status is 2xx.
+  // it arrives. Resolves to true when the response status is 2xx; never
+  // rejects. A missing targetEl is logged and resolves to false.
   async function streamPost(url, formData, targetEl) {
+    if (!targetEl) {
+      console.error("streamPost: target element not found for", url);
+      return false;
+    }
     var pre = targetEl.tagName === "PRE" ? targetEl : targetEl.querySelector("pre");
     if (!pre) {
       pre = document.createElement("pre");
@@ -104,6 +109,10 @@
     if (resp.redirected && new URL(resp.url).pathname === "/login") {
       window.location.href = "/login";
       return false;
+    }
+    if (!resp.body) {
+      pre.textContent += await resp.text();
+      return resp.ok;
     }
     var reader = resp.body.getReader();
     var dec = new TextDecoder();
@@ -131,9 +140,9 @@
     var msg = form.getAttribute("data-confirm");
     var target = form.getAttribute("data-stream");
     if (form.matches(htmxAttrs) || (!msg && !target)) return;
+    var submitter = e.submitter;
     if (msg && !form.dataset.confirmed) {
       e.preventDefault();
-      var submitter = e.submitter;
       ask(msg).then(function (ok) {
         if (!ok) return;
         form.dataset.confirmed = "1";
@@ -144,12 +153,18 @@
     }
     if (!target) return;
     e.preventDefault();
-    var fd = new FormData(form, e.submitter);
     var buttons = form.querySelectorAll("button,input[type=submit]");
     buttons.forEach(function (b) { b.disabled = true; });
-    streamPost(form.action, fd, document.querySelector(target)).then(function (ok) {
-      buttons.forEach(function (b) { b.disabled = false; });
+    (async function () {
+      var ok = false;
+      try {
+        ok = await streamPost(form.action, new FormData(form, submitter), document.querySelector(target));
+      } catch (err) {
+        console.error("data-stream:", err);
+      } finally {
+        buttons.forEach(function (b) { b.disabled = false; });
+      }
       form.dispatchEvent(new CustomEvent("stream:done", { bubbles: true, detail: { ok: ok } }));
-    });
+    })();
   });
 })();

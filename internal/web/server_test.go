@@ -9,8 +9,11 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 
+	"docker-cp/internal/auth"
 	"docker-cp/internal/docker"
 	"docker-cp/internal/store"
 )
@@ -382,5 +385,80 @@ func TestApplyCaddy(t *testing.T) {
 	}
 	if err := srv.withApplyLock(func() error { return nil }); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestLoginConcurrentRateLimited(t *testing.T) {
+	srv, _, _, h := newTestServer(t)
+	var evaluated, inflight, maxInflight atomic.Int32
+	srv.checkPassword = func(hash, pw string) bool {
+		evaluated.Add(1)
+		n := inflight.Add(1)
+		for {
+			m := maxInflight.Load()
+			if n <= m || maxInflight.CompareAndSwap(m, n) {
+				break
+			}
+		}
+		defer inflight.Add(-1)
+		return auth.CheckPassword(hash, pw)
+	}
+	var wg sync.WaitGroup
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			request(t, h, "POST", "/login", url.Values{"username": {"admin"}, "password": {"salah12345"}}, nil, "")
+		}()
+	}
+	wg.Wait()
+	rec := request(t, h, "POST", "/login", url.Values{"username": {"admin"}, "password": {"rahasia123"}}, nil, "")
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("correct password after flood = %d", rec.Code)
+	}
+	if n := evaluated.Load(); n > 5 {
+		t.Errorf("%d password checks evaluated, want <= 5", n)
+	}
+	if m := maxInflight.Load(); m > maxLoginChecks {
+		t.Errorf("%d concurrent password checks, want <= %d", m, maxLoginChecks)
+	}
+}
+
+func TestLoginRotatesSession(t *testing.T) {
+	srv, _, _, h := newTestServer(t)
+	old, _ := login(t, h)
+	rec := request(t, h, "POST", "/login", url.Values{"username": {"admin"}, "password": {"rahasia123"}}, old, "")
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("relogin = %d", rec.Code)
+	}
+	if _, ok := srv.d.Sessions.Lookup(old.Value); ok {
+		t.Error("old session still valid after re-login")
+	}
+}
+
+func TestLoginBodyLimit(t *testing.T) {
+	_, _, _, h := newTestServer(t)
+	form := url.Values{"username": {"admin"}, "password": {"rahasia123"}, "pad": {strings.Repeat("x", 16<<10)}}
+	rec := request(t, h, "POST", "/login", form, nil, "")
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("oversized login body = %d", rec.Code)
+	}
+}
+
+func TestCSRFNotFromQuery(t *testing.T) {
+	_, _, _, h := newTestServer(t)
+	c, csrf := login(t, h)
+	if rec := request(t, h, "POST", "/logout?csrf="+url.QueryEscape(csrf), nil, c, ""); rec.Code != http.StatusForbidden {
+		t.Fatalf("query-string token = %d, want 403", rec.Code)
+	}
+}
+
+func TestStreamJSRobust(t *testing.T) {
+	_, _, _, h := newTestServer(t)
+	js := request(t, h, "GET", "/static/app.js", nil, nil, "").Body.String()
+	for _, s := range []string{"if (!targetEl)", "finally"} {
+		if !strings.Contains(js, s) {
+			t.Errorf("app.js missing %q", s)
+		}
 	}
 }
