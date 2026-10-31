@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -107,15 +108,28 @@ func (c *Client) ListContainers(ctx context.Context) ([]ContainerSummary, error)
 
 // Inspect returns the container detail, with Spec rebuilt from the inspect JSON.
 func (c *Client) Inspect(ctx context.Context, id string) (ContainerDetail, error) {
-	resp, err := c.do(ctx, http.MethodGet, "/containers/"+esc(id)+"/json", nil, nil, nil)
+	raw, err := c.inspectRaw(ctx, id)
 	if err != nil {
 		return ContainerDetail{}, err
 	}
+	return detailFromInspect(raw)
+}
+
+// inspectRaw returns the daemon's container inspect JSON unchanged.
+func (c *Client) inspectRaw(ctx context.Context, id string) ([]byte, error) {
+	resp, err := c.do(ctx, http.MethodGet, "/containers/"+esc(id)+"/json", nil, nil, nil)
+	if err != nil {
+		return nil, err
+	}
 	defer resp.Body.Close()
 	var buf bytes.Buffer
-	if _, err := buf.ReadFrom(resp.Body); err != nil {
-		return ContainerDetail{}, err
+	if _, err := buf.ReadFrom(io.LimitReader(resp.Body, 16<<20)); err != nil {
+		return nil, err
 	}
+	return buf.Bytes(), nil
+}
+
+func detailFromInspect(b []byte) (ContainerDetail, error) {
 	var raw struct {
 		ID              string
 		Name            string
@@ -125,10 +139,10 @@ func (c *Client) Inspect(ctx context.Context, id string) (ContainerDetail, error
 			Ports map[string][]wirePortBinding
 		}
 	}
-	if err := json.Unmarshal(buf.Bytes(), &raw); err != nil {
+	if err := json.Unmarshal(b, &raw); err != nil {
 		return ContainerDetail{}, err
 	}
-	spec, err := SpecFromInspect(buf.Bytes())
+	spec, err := SpecFromInspect(b)
 	if err != nil {
 		return ContainerDetail{}, err
 	}

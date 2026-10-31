@@ -17,7 +17,7 @@
     {{if eq .State "running"}}<a class="btn" href="/containers/{{.ID}}/terminal">Terminal</a>{{end}}
     <a class="btn" href="/containers/new?from={{.ID}}">Duplikat</a>
     {{if eq .State "running"}}<button class="btn" type="button" hx-get="/containers/{{.ID}}/stats" hx-target="next .stats-out" hx-swap="innerHTML">Stats</button><span class="stats-out muted"></span>{{end}}
-    <form data-stream="#out-recreate" action="/containers/{{.ID}}/recreate" method="post" data-confirm="Buat ulang {{.Name}} dengan image terbaru?"><button class="btn" type="submit">Recreate</button></form>
+    {{if .Project}}<span class="muted">perbarui lewat Stacks → Pull &amp; redeploy</span>{{else}}<form data-stream="#out-recreate" action="/containers/{{.ID}}/recreate" method="post" data-confirm="Buat ulang {{.Name}} dengan image terbaru?"><button class="btn" type="submit">Recreate</button></form>{{end}}
     <form hx-post="/containers/{{.ID}}/remove" hx-target="closest tr" hx-swap="outerHTML" data-confirm="Hapus container {{.Name}}?">
       <label class="inline"><input type="checkbox" name="volumes" value="on"> hapus volume anonim</label>
       <button class="btn btn-danger" type="submit">Hapus</button>

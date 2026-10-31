@@ -243,8 +243,12 @@ func (s *Server) containerRecreate(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	ctx, cancel := detached(r)
 	defer cancel()
-	out := newProgressWriter(w)
 	d, err := s.d.Docker.Inspect(ctx, id)
+	if err == nil && d.Spec.Labels[docker.ComposeProjectLabel] != "" {
+		http.Error(w, "Container ini milik stack compose; perbarui lewat Stacks → Pull & redeploy.", http.StatusBadRequest)
+		return
+	}
+	out := newProgressWriter(w)
 	if err != nil {
 		out.printf("GAGAL: %v\n", err)
 		return

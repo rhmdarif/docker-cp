@@ -272,6 +272,28 @@ func TestRecreateStream(t *testing.T) {
 	}
 }
 
+func TestRecreateRejectsCompose(t *testing.T) {
+	_, f, _, h := newTestServer(t)
+	handleList(f)
+	f.Handle("GET /v1.43/containers/abc/json", func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `{"Id":"abc","Name":"/klien-a","Config":{"Image":"nginx:1","Labels":{"com.docker.compose.project":"web"}},"HostConfig":{}}`)
+	})
+	c, csrf := login(t, h)
+	resp := request(t, h, "POST", "/containers/abc/recreate", url.Values{}, c, csrf)
+	if resp.Code != http.StatusBadRequest || !strings.Contains(resp.Body.String(), "Stacks") {
+		t.Fatalf("status %d body %s", resp.Code, resp.Body.String())
+	}
+	for _, call := range f.Calls() {
+		if strings.Contains(call, "images/create") || strings.Contains(call, "/stop") {
+			t.Fatalf("unexpected docker call %s", call)
+		}
+	}
+	body := get(t, h, "/containers").Body.String()
+	if strings.Contains(body, "/containers/abc/recreate") || !strings.Contains(body, "Pull &amp; redeploy") {
+		t.Fatalf("compose row offers recreate:\n%s", body)
+	}
+}
+
 func frame(s string) []byte {
 	hdr := make([]byte, 8)
 	hdr[0] = 1

@@ -1,0 +1,31 @@
+{
+  "Id": "old1aaaaaaaabbbbbbbbcccc",
+  "Name": "/app",
+  "State": {"Status": "running"},
+  "Config": {
+    "Hostname": "old1aaaaaaaa",
+    "User": "1000:1000",
+    "WorkingDir": "/srv",
+    "Entrypoint": ["/docker-entrypoint.sh"],
+    "Cmd": ["nginx", "-g", "daemon off;"],
+    "Image": "myapp:1",
+    "Env": ["A=1"],
+    "Labels": {"owner": "x"},
+    "ExposedPorts": {"80/tcp": {}}
+  },
+  "HostConfig": {
+    "Memory": 268435456,
+    "NanoCpus": 500000000,
+    "CapAdd": ["NET_ADMIN"],
+    "ExtraHosts": ["db.local:10.0.0.2"],
+    "NetworkMode": "appnet",
+    "RestartPolicy": {"Name": "always"},
+    "PortBindings": {"80/tcp": [{"HostIp": "127.0.0.1", "HostPort": "8001"}]}
+  },
+  "NetworkSettings": {
+    "Networks": {
+      "appnet": {"Aliases": ["api", "old1aaaaaaaa"], "IPAMConfig": null, "NetworkID": "n1", "IPAddress": "172.20.0.5"},
+      "backend": {"Aliases": ["svc"], "NetworkID": "n2"}
+    }
+  }
+}
