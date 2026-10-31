@@ -1,0 +1,18 @@
+{
+	admin localhost:2019
+	email a@b.c
+}
+
+panel.example.com {
+	reverse_proxy 127.0.0.1:8800
+}
+
+a.klien.com, www.a.klien.com {
+	reverse_proxy 127.0.0.1:8001
+}
+
+b.klien.com {
+	reverse_proxy 10.0.0.5:3000
+	encode gzip
+	header X-A 1
+}

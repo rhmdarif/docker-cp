@@ -1,0 +1,68 @@
+// Package caddy renders the Caddyfile from stored sites and validates every
+// piece of user-supplied input that ends up inside it.
+package caddy
+
+import (
+	"fmt"
+	"strings"
+
+	"docker-cp/internal/store"
+)
+
+// Resolver maps a site target to an upstream such as "127.0.0.1:8001".
+type Resolver func(t store.Target) (upstream string, err error)
+
+const unavailableLine = `respond "docker-cp: target tidak tersedia" 502`
+
+// Generate renders the full Caddyfile. Sites whose target cannot be resolved
+// still get a block (answering 502) so one missing container never affects
+// the others; each such site adds a warning.
+func Generate(st store.State, resolve Resolver) (caddyfile string, warnings []string) {
+	var blocks []string
+
+	global := "{\n\tadmin localhost:2019\n"
+	if st.Settings.ACMEEmail != "" {
+		global += "\temail " + st.Settings.ACMEEmail + "\n"
+	}
+	blocks = append(blocks, global+"}")
+
+	if st.Settings.PanelDomain != "" {
+		blocks = append(blocks, fmt.Sprintf("%s {\n\treverse_proxy 127.0.0.1:%d\n}", st.Settings.PanelDomain, st.Settings.PanelPort))
+	}
+
+	for _, s := range st.Sites {
+		if s.Manual {
+			if b := strings.TrimSpace(s.ManualBlock); b != "" {
+				blocks = append(blocks, b)
+			}
+			continue
+		}
+		if len(s.Domains) == 0 {
+			warnings = append(warnings, fmt.Sprintf("site %s: tidak ada domain", s.ID))
+			continue
+		}
+		body := unavailableLine
+		upstream, err := resolve(s.Target)
+		if err != nil {
+			warnings = append(warnings, fmt.Sprintf("%s: %v", s.Domains[0], err))
+		} else {
+			body = "reverse_proxy " + upstream
+		}
+		var sb strings.Builder
+		sb.WriteString(strings.Join(s.Domains, ", "))
+		sb.WriteString(" {\n\t" + body + "\n")
+		if custom := strings.TrimSpace(s.Custom); custom != "" {
+			for _, line := range strings.Split(custom, "\n") {
+				line = strings.TrimRight(line, " \t\r")
+				if line == "" {
+					sb.WriteString("\n")
+					continue
+				}
+				sb.WriteString("\t" + line + "\n")
+			}
+		}
+		sb.WriteString("}")
+		blocks = append(blocks, sb.String())
+	}
+	return strings.Join(blocks, "\n\n") + "\n", warnings
+}
