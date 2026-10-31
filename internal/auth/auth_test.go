@@ -2,6 +2,7 @@ package auth
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -138,5 +139,44 @@ func TestLimiterTakeConcurrent(t *testing.T) {
 	wg.Wait()
 	if g := granted.Load(); g != 5 {
 		t.Fatalf("granted %d, want 5", g)
+	}
+}
+
+func TestLimiterKey(t *testing.T) {
+	for in, want := range map[string]string{
+		"203.0.113.7":          "203.0.113.7",
+		"2001:db8:1:2:3:4:5:6": "2001:db8:1:2::/64",
+		"2001:db8:1:2:ffff::1": "2001:db8:1:2::/64",
+		"::ffff:203.0.113.7":   "203.0.113.7",
+		"not-an-ip":            "not-an-ip",
+	} {
+		if got := LimiterKey(in); got != want {
+			t.Errorf("LimiterKey(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestLimiterBounded(t *testing.T) {
+	c := &clock{time.Unix(1000, 0)}
+	l := NewLimiter(5, 15*time.Minute, c.now)
+	for i := 0; i < 2000; i++ {
+		l.Take(fmt.Sprintf("old-%d", i))
+	}
+	c.t = c.t.Add(16 * time.Minute)
+	l.Take("fresh")
+	if n := l.size(); n > 1024 {
+		t.Fatalf("expired entries not pruned: %d", n)
+	}
+	for i := 0; i < maxLimiterKeys; i++ {
+		l.Take(fmt.Sprintf("k-%d", i))
+	}
+	if l.Take("one-too-many") {
+		t.Error("new key beyond the cap must be refused")
+	}
+	if n := l.size(); n > maxLimiterKeys {
+		t.Fatalf("size %d > cap", n)
+	}
+	if !l.Take("k-1") {
+		t.Error("existing key under its limit must still be allowed")
 	}
 }

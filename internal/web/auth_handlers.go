@@ -3,6 +3,8 @@ package web
 import (
 	"crypto/subtle"
 	"net/http"
+
+	"docker-cp/internal/auth"
 )
 
 // maxLoginChecks caps concurrent bcrypt evaluations in login.
@@ -42,7 +44,8 @@ func (s *Server) loginSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 	// Take records the attempt before bcrypt runs, so parallel requests
 	// cannot all pass the check; success Resets the counter.
-	if !s.d.Limiter.Take(ip) {
+	key := auth.LimiterKey(ip)
+	if !s.d.Limiter.Take(key) {
 		data.Error = "Terlalu banyak percobaan gagal. Coba lagi dalam 15 menit."
 		s.renderStatus(w, r, http.StatusTooManyRequests, "login", data)
 		return
@@ -61,7 +64,7 @@ func (s *Server) loginSubmit(w http.ResponseWriter, r *http.Request) {
 		s.render(w, r, "login", data)
 		return
 	}
-	s.d.Limiter.Reset(ip)
+	s.d.Limiter.Reset(key)
 	if old, ok := s.lookupSession(r); ok {
 		s.d.Sessions.Delete(old.Token)
 	}

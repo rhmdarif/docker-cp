@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -117,6 +118,28 @@ func TestLoginRateLimited(t *testing.T) {
 	rec := request(t, h, "POST", "/login", url.Values{"username": {"admin"}, "password": {"rahasia123"}}, nil, "")
 	if rec.Code != http.StatusTooManyRequests {
 		t.Fatalf("6th attempt = %d", rec.Code)
+	}
+}
+
+func TestLoginRateLimitedPerIPv6Prefix(t *testing.T) {
+	srv, _, _, h := newTestServer(t)
+	srv.checkPassword = func(string, string) bool { return false } // skip bcrypt
+	post := func(remote string) int {
+		req := httptest.NewRequest("POST", "/login", strings.NewReader("username=admin&password=salah12345"))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.RemoteAddr = remote
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	for i := 0; i < 5; i++ {
+		post(fmt.Sprintf("[2001:db8:1:2::%x]:4000", i+1))
+	}
+	if code := post("[2001:db8:1:2:ffff::9]:4000"); code != http.StatusTooManyRequests {
+		t.Fatalf("same /64: status %d", code)
+	}
+	if code := post("[2001:db8:1:3::1]:4000"); code == http.StatusTooManyRequests {
+		t.Fatal("other /64 limited")
 	}
 }
 
