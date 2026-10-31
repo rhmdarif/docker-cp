@@ -110,6 +110,14 @@
       window.location.href = "/login";
       return false;
     }
+    if (!resp.ok && (resp.headers.get("Content-Type") || "").indexOf("text/html") === 0) {
+      // Validation failure: show the re-rendered page (error banner, refilled form).
+      var html = await resp.text();
+      document.open();
+      document.write(html);
+      document.close();
+      return false;
+    }
     if (!resp.body) {
       pre.textContent += await resp.text();
       return resp.ok;
@@ -174,7 +182,14 @@
     es.onmessage = function (ev) {
       var atBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 20;
       pre.textContent += ev.data + "\n";
+      var lines = pre.textContent.split("\n");
+      if (lines.length > 2001) pre.textContent = lines.slice(lines.length - 2001).join("\n");
       if (atBottom) pre.scrollTop = pre.scrollHeight;
+    };
+    // No auto-reconnect: a reconnect would replay the tail and duplicate lines.
+    es.onerror = function () {
+      es.close();
+      pre.textContent += "\u2014 stream berakhir \u2014\n";
     };
     window.addEventListener("pagehide", function () { es.close(); });
   });

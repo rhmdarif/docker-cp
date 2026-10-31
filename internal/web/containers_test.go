@@ -134,14 +134,25 @@ func TestCreateInvalidForm(t *testing.T) {
 	fakeCreateFlow(f)
 	c, csrf := login(t, h)
 	for _, form := range []url.Values{
-		{"name": {"app1"}, "image": {"nginx"}, "ports": {"abc"}},
-		{"name": {"-bad"}, "image": {"nginx"}},
+		{"name": {"app1"}, "image": {"nginx-keep"}, "ports": {"abc"}},
+		{"name": {"-bad"}, "image": {"nginx-keep"}},
 		{"name": {"app1"}, "image": {""}},
 	} {
 		resp := request(t, h, "POST", "/containers", form, c, csrf)
 		if resp.Code != http.StatusBadRequest {
 			t.Errorf("form %v: status %d", form, resp.Code)
 		}
+		body := resp.Body.String()
+		if !strings.Contains(body, `role="alert"`) || !strings.Contains(body, `value="`+form.Get("name")+`"`) {
+			t.Errorf("form %v: no error banner or refilled name:\n%s", form, body)
+		}
+		if form.Get("image") != "" && !strings.Contains(body, `value="nginx-keep"`) {
+			t.Errorf("form %v: image not refilled", form)
+		}
+	}
+	body := request(t, h, "POST", "/containers", url.Values{"name": {"app1"}, "image": {"nginx-keep"}, "ports": {"abc"}}, c, csrf).Body.String()
+	if !strings.Contains(body, "format port harus HOST:CONTAINER") {
+		t.Errorf("specific port error missing:\n%s", body)
 	}
 	for _, call := range f.Calls() {
 		if strings.Contains(call, "/containers/create") || strings.Contains(call, "/images/create") {
