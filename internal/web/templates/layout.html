@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="csrf" content="{{.CSRF}}">
+<meta name="htmx-config" content='{"includeIndicatorStyles":false}'>
+<title>{{block "title" .}}docker-cp{{end}}</title>
+<link rel="stylesheet" href="/static/app.css">
+<script src="/static/htmx.min.js" defer></script>
+<script src="/static/app.js" defer></script>
+</head>
+<body{{if not .Authed}} class="bare"{{end}}>
+{{if .Authed}}
+<nav class="sidebar" aria-label="Navigasi utama">
+  <a class="brand" href="/">docker-cp</a>
+  <ul>
+    {{$p := .Page}}
+    {{range $n := navItems}}
+    <li><a href="{{$n.Href}}"{{if eq $p $n.Key}} aria-current="page"{{end}}>{{$n.Label}}</a></li>
+    {{end}}
+  </ul>
+  <form method="post" action="/logout" class="logout">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <button type="submit" class="btn btn-ghost">Keluar</button>
+  </form>
+</nav>
+{{end}}
+<main class="main">
+  {{if .InsecureWarning}}
+  <div class="banner banner-warn" role="alert">Panel diakses tanpa HTTPS. Password dan sesi dikirim tanpa enkripsi. Atur domain panel di Pengaturan, atau akses lewat tunnel SSH.</div>
+  {{end}}
+  {{if .Flash}}<div class="banner banner-info" role="status">{{.Flash}}</div>{{end}}
+  {{block "content" .}}{{end}}
+</main>
+</body>
+</html>

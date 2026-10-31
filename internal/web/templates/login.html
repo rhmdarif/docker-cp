@@ -1,0 +1,19 @@
+{{define "title"}}Masuk · docker-cp{{end}}
+{{define "content"}}
+<section class="login card">
+  <h1>docker-cp</h1>
+  {{if .Data.NoAdmin}}
+  <p class="banner banner-warn">Belum ada akun admin. Jalankan <code>docker-cp passwd</code> di server.</p>
+  {{end}}
+  {{if .Data.Error}}<p class="banner banner-error" role="alert">{{.Data.Error}}</p>{{end}}
+  <form method="post" action="/login" class="stack">
+    <label>Username
+      <input name="username" value="{{.Data.Username}}" autocomplete="username" required autofocus>
+    </label>
+    <label>Password
+      <input name="password" type="password" autocomplete="current-password" required>
+    </label>
+    <button type="submit" class="btn btn-primary">Masuk</button>
+  </form>
+</section>
+{{end}}
