@@ -16,7 +16,7 @@
     <label>Email ACME (opsional, untuk sertifikat Let's Encrypt)
       <input name="acme_email" type="email" value="{{.Data.ACMEEmail}}" autocomplete="off">
     </label>
-    <p class="muted">Mengganti port membuat panel restart.</p>
+    <p class="muted">Mengganti port membuat panel restart. Jika ufw aktif, ufw hanya mengizinkan port lama: jalankan <code>sudo ufw allow PORT/tcp</code> untuk port baru sebelum menyimpan.</p>
     <div><button class="btn btn-primary" type="submit">Simpan</button></div>
   </form>
 </section>

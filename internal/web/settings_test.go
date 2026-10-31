@@ -16,6 +16,7 @@ func settingsForm(domain, port, email string) url.Values {
 
 func TestSettingsPortChangeExits(t *testing.T) {
 	srv, f, fc, h := newTestServer(t)
+	srv.listening = noneListening
 	handleList(f)
 	exited := make(chan int, 1)
 	srv.d.Exit = func(code int) { exited <- code }
@@ -125,5 +126,27 @@ func TestPasswordChange(t *testing.T) {
 	}
 	if rec := request(t, h, "POST", "/login", url.Values{"username": {testUser}, "password": {"barubaru1"}}, nil, ""); rec.Code != http.StatusSeeOther {
 		t.Fatalf("new password login: %d", rec.Code)
+	}
+}
+
+func TestSettingsRejectsListeningPort(t *testing.T) {
+	srv, f, _, h := newTestServer(t)
+	handleList(f)
+	srv.listening = func(p int) bool { return p == 8900 || p == 8800 }
+	c, csrf := login(t, h)
+	rec := request(t, h, "POST", "/settings", settingsForm("", "8900", ""), c, csrf)
+	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "port 8900 sedang dipakai") {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	if p := srv.d.Store.Get().Settings.PanelPort; p != 8800 {
+		t.Fatalf("PanelPort = %d", p)
+	}
+	// The panel's own (listening) port stays acceptable.
+	rec = request(t, h, "POST", "/settings", settingsForm("", "8800", ""), c, csrf)
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("own port: status %d: %s", rec.Code, rec.Body.String())
+	}
+	if body := get(t, h, "/settings").Body.String(); !strings.Contains(body, "ufw") {
+		t.Fatalf("no ufw note:\n%s", body)
 	}
 }

@@ -116,6 +116,11 @@ func (s *Server) validateSettings(ctx context.Context, f settingsData, st store.
 		if ports.UsedPorts(cs)[port] {
 			return next, invalid(fmt.Errorf("port %d sudah dipakai container", port))
 		}
+		// After the restart the panel could not bind a busy port and the
+		// admin would be locked out.
+		if s.listening(port) {
+			return next, invalid(fmt.Errorf("port %d sedang dipakai proses lain di host", port))
+		}
 	}
 	next.PanelPort = port
 	return next, nil
