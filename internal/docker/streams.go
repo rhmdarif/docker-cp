@@ -173,3 +173,15 @@ func (c *Client) ExecResize(ctx context.Context, execID string, rows, cols uint1
 	q := url.Values{"h": {strconv.Itoa(int(rows))}, "w": {strconv.Itoa(int(cols))}}
 	return c.call(ctx, http.MethodPost, "/exec/"+esc(execID)+"/resize", q)
 }
+
+// ExecInspect reports an exec's host pid and whether it is still running.
+func (c *Client) ExecInspect(ctx context.Context, execID string) (pid int, running bool, err error) {
+	var r struct {
+		Pid     int
+		Running bool
+	}
+	if err := c.getJSON(ctx, "/exec/"+esc(execID)+"/json", nil, &r); err != nil {
+		return 0, false, err
+	}
+	return r.Pid, r.Running, nil
+}

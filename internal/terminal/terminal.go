@@ -102,8 +102,39 @@ func ServeExec(ctx context.Context, ws *websocket.Conn, dc *docker.Client, conta
 	resize := func(rows, cols uint16) {
 		dc.ExecResize(ctx, sess.ID, rows, cols)
 	}
-	bridge(ctx, ws, sess.Conn, resize, func() { sess.Conn.Close() })
+	bridge(ctx, ws, sess.Conn, resize, func() {
+		sess.Conn.Close()
+		// Docker does not end an exec when its attach connection closes.
+		killExec(dc.ExecInspect, syscall.Kill, sess.ID, killGrace)
+	})
 	return nil
+}
+
+// execPoll is how often killExec re-checks an exec after SIGHUP.
+var execPoll = 100 * time.Millisecond
+
+// killExec ends a still-running exec: SIGHUP to its host pid, then SIGKILL if
+// it is still running after grace. It uses its own short contexts because the
+// request context is usually already cancelled at teardown.
+func killExec(inspect func(ctx context.Context, execID string) (int, bool, error), kill func(pid int, s syscall.Signal) error, execID string, grace time.Duration) {
+	running := func() (int, bool) {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		pid, ok, err := inspect(ctx, execID)
+		return pid, err == nil && ok && pid > 0
+	}
+	pid, ok := running()
+	if !ok {
+		return
+	}
+	kill(pid, syscall.SIGHUP)
+	for deadline := time.Now().Add(grace); time.Now().Before(deadline); {
+		time.Sleep(execPoll)
+		if _, ok := running(); !ok {
+			return
+		}
+	}
+	kill(pid, syscall.SIGKILL)
 }
 
 // bridge copies between ws and rw until either side ends or ctx is done, then

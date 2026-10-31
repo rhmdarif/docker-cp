@@ -160,3 +160,24 @@ func TestLogsTailAll(t *testing.T) {
 	}
 	rc.Close()
 }
+
+func TestExecInspect(t *testing.T) {
+	f := dockertest.New(t)
+	f.Handle("GET /v1.43/exec/e1/json", func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `{"ID":"e1","Running":true,"Pid":4242,"ExitCode":0}`)
+	})
+	f.Handle("GET /v1.43/exec/e2/json", func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `{"ID":"e2","Running":false,"Pid":0,"ExitCode":0}`)
+	})
+	c := f.Client()
+	pid, running, err := c.ExecInspect(context.Background(), "e1")
+	if err != nil || pid != 4242 || !running {
+		t.Fatalf("e1: pid=%d running=%v err=%v", pid, running, err)
+	}
+	if _, running, err := c.ExecInspect(context.Background(), "e2"); err != nil || running {
+		t.Fatalf("e2: running=%v err=%v", running, err)
+	}
+	if _, _, err := c.ExecInspect(context.Background(), "missing"); !docker.IsNotFound(err) {
+		t.Fatalf("missing: %v", err)
+	}
+}

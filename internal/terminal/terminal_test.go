@@ -128,3 +128,42 @@ func TestServeHostClosesWhenShellExits(t *testing.T) {
 		t.Fatal("ServeHost did not return")
 	}
 }
+
+type sig struct {
+	pid int
+	s   syscall.Signal
+}
+
+func TestKillExec(t *testing.T) {
+	old := execPoll
+	execPoll = 10 * time.Millisecond
+	defer func() { execPoll = old }()
+
+	run := func(states []bool, inspectErr error) []sig {
+		var sent []sig
+		i := 0
+		inspect := func(ctx context.Context, id string) (int, bool, error) {
+			if _, ok := ctx.Deadline(); !ok {
+				t.Error("inspect without deadline")
+			}
+			r := states[min(i, len(states)-1)]
+			i++
+			return 77, r, inspectErr
+		}
+		kill := func(pid int, s syscall.Signal) error { sent = append(sent, sig{pid, s}); return nil }
+		killExec(inspect, kill, "e1", 50*time.Millisecond)
+		return sent
+	}
+	if got := run([]bool{false}, nil); len(got) != 0 {
+		t.Errorf("exited exec: sent %v", got)
+	}
+	if got := run([]bool{true}, context.DeadlineExceeded); len(got) != 0 {
+		t.Errorf("inspect error: sent %v", got)
+	}
+	if got := run([]bool{true, true, false}, nil); len(got) != 1 || got[0] != (sig{77, syscall.SIGHUP}) {
+		t.Errorf("exits after HUP: sent %v", got)
+	}
+	if got := run([]bool{true}, nil); len(got) != 2 || got[0] != (sig{77, syscall.SIGHUP}) || got[1] != (sig{77, syscall.SIGKILL}) {
+		t.Errorf("ignores HUP: sent %v", got)
+	}
+}
