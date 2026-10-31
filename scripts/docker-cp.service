@@ -1,0 +1,14 @@
+[Unit]
+Description=docker-cp control panel
+After=network-online.target docker.service caddy.service
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/docker-cp serve
+Restart=always
+RestartSec=2
+Environment=GOMEMLIMIT=40MiB
+Environment=GOGC=50
+
+[Install]
+WantedBy=multi-user.target
