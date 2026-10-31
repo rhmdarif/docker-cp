@@ -83,7 +83,7 @@ func stackName(r *http.Request) string {
 func (s *Server) saveStack(w http.ResponseWriter, r *http.Request) (string, bool) {
 	form := stackForm{Name: stackName(r), Compose: caddy.NormalizeNewlines(r.PostFormValue("compose")), Env: caddy.NormalizeNewlines(r.PostFormValue("env")), New: r.PathValue("name") == ""}
 	if !compose.ValidName(form.Name) {
-		form.Error = "Nama stack tidak valid: huruf kecil, angka, - dan _, maksimal 63 karakter."
+		form.Error = "Nama stack tidak valid: huruf kecil, angka, - dan _, maksimal 63 karakter (\"new\" tidak boleh)."
 		s.renderStatus(w, r, http.StatusBadRequest, "stack_form", form)
 		return "", false
 	}

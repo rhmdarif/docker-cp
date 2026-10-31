@@ -11,6 +11,7 @@ import (
 	"path"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 var funcs = template.FuncMap{
@@ -137,7 +138,18 @@ func (s *Server) renderFragment(w http.ResponseWriter, file, block string, data 
 }
 
 // setFlash stores msg to be shown by the next rendered page.
+// maxFlash bounds the flash text in bytes; URL-escaping can triple it and
+// browsers drop cookies over 4 KB.
+const maxFlash = 1000
+
 func (s *Server) setFlash(w http.ResponseWriter, msg string) {
+	if len(msg) > maxFlash {
+		cut := maxFlash
+		for cut > 0 && !utf8.RuneStart(msg[cut]) {
+			cut--
+		}
+		msg = msg[:cut] + "…"
+	}
 	http.SetCookie(w, &http.Cookie{
 		Name: flashCookie, Value: url.QueryEscape(msg), Path: "/",
 		MaxAge: 60, HttpOnly: true, SameSite: http.SameSiteStrictMode,

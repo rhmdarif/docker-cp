@@ -42,7 +42,7 @@ func TestValidName(t *testing.T) {
 			t.Errorf("%q should be valid", n)
 		}
 	}
-	for _, n := range []string{"", "../x", "Shop", "a/b", "-a", strings.Repeat("a", 64)} {
+	for _, n := range []string{"", "../x", "Shop", "a/b", "-a", strings.Repeat("a", 64), "new"} {
 		if ValidName(n) {
 			t.Errorf("%q should be invalid", n)
 		}

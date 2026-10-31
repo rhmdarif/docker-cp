@@ -47,7 +47,9 @@ func NewManager(dir, bin string) *Manager {
 
 var nameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,62}$`)
 
-func ValidName(name string) bool { return nameRe.MatchString(name) }
+// ValidName reports whether name is a valid stack name. "new" is reserved:
+// GET /stacks/new is the create form and would shadow such a stack.
+func ValidName(name string) bool { return name != "new" && nameRe.MatchString(name) }
 
 func checkName(name string) error {
 	if !ValidName(name) {

@@ -13,6 +13,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"unicode/utf8"
 
 	"docker-cp/internal/auth"
 	"docker-cp/internal/docker"
@@ -483,5 +484,24 @@ func TestStreamJSRobust(t *testing.T) {
 		if !strings.Contains(js, s) {
 			t.Errorf("app.js missing %q", s)
 		}
+	}
+}
+
+func TestFlashTruncated(t *testing.T) {
+	srv, _, _, _ := newTestServer(t)
+	rec := httptest.NewRecorder()
+	srv.setFlash(rec, strings.Repeat("é", 3000))
+	cs := rec.Result().Cookies()
+	if len(cs) != 1 || len(cs[0].String()) > 4000 {
+		t.Fatalf("cookie too large: %d", len(cs[0].String()))
+	}
+	v, err := url.QueryUnescape(cs[0].Value)
+	if err != nil || !utf8.ValidString(v) || !strings.HasSuffix(v, "…") || len(v) > 1000+len("…") {
+		t.Fatalf("flash %q (%d bytes), %v", v, len(v), err)
+	}
+	rec = httptest.NewRecorder()
+	srv.setFlash(rec, "pendek")
+	if v, _ := url.QueryUnescape(rec.Result().Cookies()[0].Value); v != "pendek" {
+		t.Fatalf("short flash %q", v)
 	}
 }
