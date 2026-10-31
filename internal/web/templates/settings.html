@@ -1,0 +1,41 @@
+{{define "title"}}Pengaturan · docker-cp{{end}}
+{{define "content"}}
+<h1>Pengaturan</h1>
+{{if .Data.RestartPort}}<p class="banner banner-info" role="status">Panel restart ke port {{.Data.RestartPort}}… Buka panel lewat port baru dalam beberapa detik.</p>{{end}}
+<section class="card">
+  <h2>Panel</h2>
+  {{if .Data.Error}}<p class="banner banner-error" role="alert">{{.Data.Error}}</p>{{end}}
+  <form method="post" action="/settings" class="stack">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <label>Domain panel (kosong = tanpa domain, akses lewat port)
+      <input name="panel_domain" value="{{.Data.PanelDomain}}" placeholder="panel.contoh.com" autocomplete="off">
+    </label>
+    <label>Port panel (1024-65535)
+      <input name="panel_port" value="{{.Data.PanelPort}}" inputmode="numeric" required autocomplete="off">
+    </label>
+    <label>Email ACME (opsional, untuk sertifikat Let's Encrypt)
+      <input name="acme_email" type="email" value="{{.Data.ACMEEmail}}" autocomplete="off">
+    </label>
+    <p class="muted">Mengganti port membuat panel restart.</p>
+    <div><button class="btn btn-primary" type="submit">Simpan</button></div>
+  </form>
+</section>
+<section class="card">
+  <h2>Ganti password</h2>
+  {{if .Data.PasswordError}}<p class="banner banner-error" role="alert">{{.Data.PasswordError}}</p>{{end}}
+  <form method="post" action="/settings/password" class="stack">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <label>Password lama
+      <input name="current" type="password" required autocomplete="current-password">
+    </label>
+    <label>Password baru (minimal 8 karakter)
+      <input name="new" type="password" required minlength="8" autocomplete="new-password">
+    </label>
+    <label>Ulangi password baru
+      <input name="confirm" type="password" required minlength="8" autocomplete="new-password">
+    </label>
+    <p class="muted">Semua sesi akan keluar setelah password diganti.</p>
+    <div><button class="btn btn-primary" type="submit">Ganti password</button></div>
+  </form>
+</section>
+{{end}}

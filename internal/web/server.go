@@ -1,6 +1,8 @@
 // Package web is the HTTP panel: routing, middleware, templates and handlers.
 //
 // Files: containers_handlers.go / resources_handlers.go (Docker pages),
+// stacks_handlers.go, sites_handlers.go (Caddy sites, commit helper),
+// settings_handlers.go (panel settings, password),
 // forms.go (container form parsing), server.go (Server, routes, static, Caddy lock), middleware.go
 // (headers, auth, CSRF, client IP/origin helpers), render.go (templates,
 // render/fragment/flash, formatters).
@@ -134,6 +136,8 @@ func (s *Server) routes() *http.ServeMux {
 	s.containerRoutes(mux)
 	s.resourceRoutes(mux)
 	s.stackRoutes(mux)
+	s.siteRoutes(mux)
+	s.settingsRoutes(mux)
 	return mux
 }
 
