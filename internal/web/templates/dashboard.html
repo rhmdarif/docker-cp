@@ -1,0 +1,27 @@
+{{define "title"}}Dashboard · docker-cp{{end}}
+{{define "content"}}
+<h1>Dashboard</h1>
+<div class="grid">
+  <section class="card">
+    <h2>Containers</h2>
+    {{if .Data.DockerError}}
+    <p class="banner banner-error">Docker tidak terhubung: {{.Data.DockerError}}</p>
+    {{else}}
+    <p class="stat"><span class="dot dot-ok"></span>{{.Data.Running}} berjalan</p>
+    <p class="stat"><span class="dot dot-off"></span>{{.Data.Stopped}} berhenti</p>
+    {{end}}
+    <a href="/containers">Kelola containers</a>
+  </section>
+  <section class="card">
+    <h2>Sites</h2>
+    <p class="stat">{{.Data.Sites}} site</p>
+    <a href="/sites">Kelola sites</a>
+  </section>
+</div>
+<section class="card">
+  <h2>Sistem</h2>
+  <div hx-get="/fragments/sysinfo" hx-trigger="load, every 5s" hx-swap="innerHTML">
+    <p class="muted">Memuat...</p>
+  </div>
+</section>
+{{end}}

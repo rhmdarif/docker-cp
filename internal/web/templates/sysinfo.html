@@ -1,0 +1,13 @@
+{{define "sysinfo"}}
+{{if .Error}}
+<p class="banner banner-error">Info sistem tidak tersedia: {{.Error}}</p>
+{{else}}
+<dl class="sysinfo">
+  <div><dt>CPU</dt><dd>{{printf "%.0f" .Info.CPUPercent}}%</dd></div>
+  <div><dt>RAM</dt><dd>{{bytes .Info.MemUsed}} / {{bytes .Info.MemTotal}} ({{pct .Info.MemUsed .Info.MemTotal}})</dd></div>
+  <div><dt>Disk</dt><dd>{{bytes .Info.DiskUsed}} / {{bytes .Info.DiskTotal}} ({{pct .Info.DiskUsed .Info.DiskTotal}})</dd></div>
+  <div><dt>Load</dt><dd>{{printf "%.2f" .Info.Load1}}</dd></div>
+  <div><dt>Uptime</dt><dd>{{uptime .Info.Uptime}}</dd></div>
+</dl>
+{{end}}
+{{end}}

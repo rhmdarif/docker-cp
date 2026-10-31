@@ -1,0 +1,23 @@
+version: 2
+project_name: docker-cp
+
+builds:
+  - id: docker-cp
+    main: ./cmd/docker-cp
+    binary: docker-cp
+    env: [CGO_ENABLED=0]
+    goos: [linux]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+
+archives:
+  - formats: [tar.gz]
+    name_template: "docker-cp_{{ .Version }}_linux_{{ .Arch }}"
+
+checksum:
+  name_template: checksums.txt
+
+release:
+  extra_files:
+    - glob: scripts/install.sh

@@ -1,0 +1,16 @@
+{
+  "Id": "old1aaaaaaaabbbbbbbbcccc",
+  "Name": "/db",
+  "State": {"Status": "running"},
+  "Config": {
+    "Hostname": "old1aaaaaaaa",
+    "Image": "postgres:16",
+    "Volumes": {"/var/lib/postgresql/data": {}, "/var/lib/other": {}}
+  },
+  "HostConfig": {"NetworkMode": "default"},
+  "Mounts": [
+    {"Type": "volume", "Name": "abc123anon", "Source": "/var/lib/docker/volumes/abc123anon/_data", "Destination": "/var/lib/postgresql/data"},
+    {"Type": "volume", "Name": "extra456anon", "Source": "/var/lib/docker/volumes/extra456anon/_data", "Destination": "/var/lib/other"},
+    {"Type": "bind", "Source": "/etc/x", "Destination": "/etc/x"}
+  ]
+}

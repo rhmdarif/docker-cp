@@ -1,0 +1,47 @@
+{{define "title"}}{{if .Data.New}}Site baru{{else}}Edit site{{end}} · docker-cp{{end}}
+{{define "content"}}
+<h1>{{if .Data.New}}Site baru{{else}}Edit site{{end}}</h1>
+{{if .Data.Error}}<p class="banner banner-error" role="alert">{{.Data.Error}}</p>{{end}}
+{{if .Data.DockerError}}<p class="banner banner-warn">{{.Data.DockerError}}</p>{{end}}
+<section class="card">
+  <form method="post" action="{{if .Data.New}}/sites{{else}}/sites/{{.Data.ID}}{{end}}" class="stack">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <label>Domain (satu per baris)
+      <textarea name="domains" rows="3" spellcheck="false" class="mono">{{.Data.Domains}}</textarea>
+    </label>
+    <fieldset>
+      <legend>Target</legend>
+      {{if or (not .Data.DockerError) .Data.Containers}}
+      <label class="check"><input type="radio" name="target_type" value="container"{{if eq .Data.TargetType "container"}} checked{{end}}> Container</label>
+      <label>Container
+        <select name="container">
+          {{$sel := .Data.Container}}
+          {{range .Data.Containers}}<option value="{{.}}"{{if eq . $sel}} selected{{end}}>{{.}}</option>{{end}}
+        </select>
+      </label>
+      <label>Port container (kosong = port pertama yang di-publish)
+        <input name="container_port" value="{{.Data.ContainerPort}}" inputmode="numeric" autocomplete="off">
+      </label>
+      {{end}}
+      <label class="check"><input type="radio" name="target_type" value="host"{{if eq .Data.TargetType "host"}} checked{{end}}> Host</label>
+      <label>Host:port
+        <input name="host" value="{{.Data.Host}}" placeholder="127.0.0.1:9000" autocomplete="off">
+      </label>
+    </fieldset>
+    <label>Direktif tambahan (opsional, di dalam blok site)
+      <textarea name="custom" rows="4" spellcheck="false" class="mono">{{.Data.Custom}}</textarea>
+    </label>
+    <fieldset>
+      <legend>Mode manual</legend>
+      <label class="check"><input type="checkbox" name="manual"{{if .Data.Manual}} checked{{end}}> Tulis blok Caddyfile sendiri (domain dan target di atas diabaikan)</label>
+      <label>Blok site
+        <textarea name="manual_block" rows="8" spellcheck="false" class="mono" placeholder="contoh.com {&#10;	reverse_proxy 127.0.0.1:9000&#10;}">{{.Data.ManualBlock}}</textarea>
+      </label>
+    </fieldset>
+    <div>
+      <button class="btn btn-primary" type="submit">Simpan</button>
+      <a class="btn" href="/sites">Batal</a>
+    </div>
+  </form>
+</section>
+{{end}}

@@ -1,0 +1,10 @@
+{{define "title"}}Terminal · docker-cp{{end}}
+{{define "content"}}
+<h1>Terminal</h1>
+<link rel="stylesheet" href="/static/xterm.css">
+<script src="/static/xterm.js" defer></script>
+<script src="/static/addon-fit.js" defer></script>
+<p><button class="btn btn-primary" type="button" id="term-add">+ Terminal</button></p>
+<div class="term-tabs" id="term-tabs" role="tablist" aria-label="Tab terminal"></div>
+<div id="term-panes" data-ws="/ws/host"></div>
+{{end}}

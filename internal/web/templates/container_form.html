@@ -1,0 +1,45 @@
+{{define "title"}}Container baru · docker-cp{{end}}
+{{define "content"}}
+<h1>Container baru</h1>
+{{if .Data.Error}}<p class="banner banner-error" role="alert">{{.Data.Error}}</p>{{end}}
+{{range .Data.Warnings}}<p class="banner banner-warn">{{.}}</p>{{end}}
+<section class="card">
+  <form method="post" action="/containers" class="stack" data-stream="#create-out">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <label>Nama
+      <input name="name" value="{{.Data.Name}}" required pattern="[a-zA-Z0-9][a-zA-Z0-9_.\-]+" autocomplete="off">
+    </label>
+    <label>Image
+      <input name="image" value="{{.Data.Image}}" placeholder="nginx:1.27" required autocomplete="off">
+    </label>
+    <label>Port (satu per baris, HOST:CONTAINER, opsional IP: dan /udp)
+      <textarea name="ports" rows="3" spellcheck="false">{{.Data.Ports}}</textarea>
+    </label>
+    <label class="check"><input type="checkbox" name="publish_all"{{if .Data.PublishAll}} checked{{end}}> Publikasikan ke 0.0.0.0 (port tanpa IP dibuka ke internet)</label>
+    <p class="muted">Tanpa opsi ini port hanya terikat ke 127.0.0.1 dan diakses lewat Caddy. Docker melewati ufw, jadi port di 0.0.0.0 terbuka ke publik walaupun ufw menutupnya.</p>
+    <label>Environment (KEY=VALUE per baris)
+      <textarea name="env" rows="4" spellcheck="false">{{.Data.Env}}</textarea>
+    </label>
+    <label>Mount (volume:/path atau /host:/path[:ro], satu per baris)
+      <textarea name="mounts" rows="3" spellcheck="false">{{.Data.Mounts}}</textarea>
+    </label>
+    <label>Restart
+      <select name="restart">
+        {{$r := .Data.Restart}}
+        <option value="unless-stopped"{{if eq $r "unless-stopped"}} selected{{end}}>unless-stopped</option>
+        <option value="always"{{if eq $r "always"}} selected{{end}}>always</option>
+        <option value="on-failure"{{if eq $r "on-failure"}} selected{{end}}>on-failure</option>
+        <option value="no"{{if eq $r "no"}} selected{{end}}>no</option>
+      </select>
+    </label>
+    <label>Network (kosong = bridge bawaan)
+      <input name="network" value="{{.Data.Network}}" autocomplete="off">
+    </label>
+    <label>Command (opsional, dipisah spasi; pakai '...' atau "..." untuk argumen berspasi)
+      <input name="cmd" value="{{.Data.Cmd}}" autocomplete="off">
+    </label>
+    <div><button type="submit" class="btn btn-primary">Buat dan jalankan</button> <a class="btn" href="/containers">Batal</a></div>
+  </form>
+  <pre class="stream" id="create-out"></pre>
+</section>
+{{end}}
