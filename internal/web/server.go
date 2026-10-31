@@ -133,6 +133,7 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("GET /fragments/sysinfo", s.sysinfoFragment)
 	s.containerRoutes(mux)
 	s.resourceRoutes(mux)
+	s.stackRoutes(mux)
 	return mux
 }
 

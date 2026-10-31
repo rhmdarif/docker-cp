@@ -146,9 +146,9 @@
   document.addEventListener("submit", function (e) {
     var form = e.target;
     var msg = form.getAttribute("data-confirm");
-    var target = form.getAttribute("data-stream");
-    if (form.matches(htmxAttrs) || (!msg && !target)) return;
     var submitter = e.submitter;
+    var target = (submitter && submitter.getAttribute("data-stream")) || form.getAttribute("data-stream");
+    if (form.matches(htmxAttrs) || (!msg && !target)) return;
     if (msg && !form.dataset.confirmed) {
       e.preventDefault();
       ask(msg).then(function (ok) {
@@ -166,7 +166,7 @@
     (async function () {
       var ok = false;
       try {
-        ok = await streamPost(form.action, new FormData(form, submitter), document.querySelector(target));
+        ok = await streamPost((submitter && submitter.formAction) || form.action, new FormData(form, submitter), document.querySelector(target));
       } catch (err) {
         console.error("data-stream:", err);
       } finally {
