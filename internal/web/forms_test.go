@@ -1,7 +1,10 @@
 package web
 
 import (
+	"net/http/httptest"
+	"net/url"
 	"reflect"
+	"strings"
 	"testing"
 
 	"docker-cp/internal/docker"
@@ -106,5 +109,19 @@ func TestParseCmd(t *testing.T) {
 		if _, err := ParseCmd(bad); err == nil {
 			t.Errorf("ParseCmd(%q) = nil error", bad)
 		}
+	}
+}
+
+func TestContainerFormNormalizesNewlines(t *testing.T) {
+	r := httptest.NewRequest("POST", "/containers", strings.NewReader(url.Values{
+		"name": {"app1"}, "image": {"nginx"}, "ports": {"8001:80\r8002:81"}, "env": {"A=1\rB=2"}, "mounts": {"data:/data\r\n"},
+	}.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	spec, _, err := parseContainerForm(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(spec.Ports) != 2 || !reflect.DeepEqual(spec.Env, []string{"A=1", "B=2"}) || len(spec.Mounts) != 1 {
+		t.Fatalf("spec %+v", spec)
 	}
 }

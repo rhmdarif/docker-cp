@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"docker-cp/internal/caddy"
 	"docker-cp/internal/docker"
 	"docker-cp/internal/ports"
 )
@@ -154,7 +155,8 @@ func (s *Server) containerNew(w http.ResponseWriter, r *http.Request) {
 func parseContainerForm(r *http.Request) (docker.CreateSpec, containerForm, error) {
 	f := containerForm{
 		Name: strings.TrimSpace(r.PostFormValue("name")), Image: strings.TrimSpace(r.PostFormValue("image")),
-		Ports: r.PostFormValue("ports"), Env: r.PostFormValue("env"), Mounts: r.PostFormValue("mounts"),
+		Ports: caddy.NormalizeNewlines(r.PostFormValue("ports")), Env: caddy.NormalizeNewlines(r.PostFormValue("env")),
+		Mounts:  caddy.NormalizeNewlines(r.PostFormValue("mounts")),
 		Restart: r.PostFormValue("restart"), Network: strings.TrimSpace(r.PostFormValue("network")),
 		Cmd: r.PostFormValue("cmd"), PublishAll: r.PostFormValue("publish_all") == "on",
 	}

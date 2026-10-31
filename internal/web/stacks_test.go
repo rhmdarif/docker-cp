@@ -57,6 +57,21 @@ func TestStackSave(t *testing.T) {
 	}
 }
 
+func TestStackSaveNormalizesNewlines(t *testing.T) {
+	srv, _, _, h := newTestServer(t)
+	rec := post(t, h, "/stacks", url.Values{"name": {"shop"}, "compose": {"services:\r\n  web: {}\r\n"}, "env": {"A=1\r\nB=2\r"}})
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	dir := filepath.Join(srv.d.Cfg.StacksDir, "shop")
+	if b, _ := os.ReadFile(filepath.Join(dir, "docker-compose.yml")); string(b) != "services:\n  web: {}\n" {
+		t.Errorf("compose %q", b)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, ".env")); strings.Contains(string(b), "\r") || !strings.Contains(string(b), "A=1\nB=2") {
+		t.Errorf("env %q", b)
+	}
+}
+
 func TestStackSaveBadName(t *testing.T) {
 	srv, _, _, h := newTestServer(t)
 	for _, target := range []string{"/stacks", "/stacks/Bad.Name"} {

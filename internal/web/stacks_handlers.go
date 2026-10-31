@@ -8,6 +8,7 @@ import (
 	"os"
 	"time"
 
+	"docker-cp/internal/caddy"
 	"docker-cp/internal/compose"
 )
 
@@ -80,7 +81,7 @@ func stackName(r *http.Request) string {
 // saveStack validates the name and writes the form; on failure it has
 // already responded.
 func (s *Server) saveStack(w http.ResponseWriter, r *http.Request) (string, bool) {
-	form := stackForm{Name: stackName(r), Compose: r.PostFormValue("compose"), Env: r.PostFormValue("env"), New: r.PathValue("name") == ""}
+	form := stackForm{Name: stackName(r), Compose: caddy.NormalizeNewlines(r.PostFormValue("compose")), Env: caddy.NormalizeNewlines(r.PostFormValue("env")), New: r.PathValue("name") == ""}
 	if !compose.ValidName(form.Name) {
 		form.Error = "Nama stack tidak valid: huruf kecil, angka, - dan _, maksimal 63 karakter."
 		s.renderStatus(w, r, http.StatusBadRequest, "stack_form", form)
