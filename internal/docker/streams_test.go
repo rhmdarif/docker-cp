@@ -54,6 +54,9 @@ func TestLogsQuery(t *testing.T) {
 func TestStatsOnce(t *testing.T) {
 	f := dockertest.New(t)
 	f.Handle("GET /v1.43/containers/c1/stats", func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := r.URL.Query()["one-shot"]; ok {
+			t.Error("one-shot must not be sent")
+		}
 		if r.URL.Query().Get("stream") != "false" {
 			t.Errorf("stream=%q", r.URL.Query().Get("stream"))
 		}
@@ -120,4 +123,40 @@ func TestExecAttachUpgrade(t *testing.T) {
 	if l, _ := br.ReadString('\n'); l != "echo:hi\n" {
 		t.Fatalf("l=%q", l)
 	}
+}
+
+func TestStatsOnceNoPrecpu(t *testing.T) {
+	f := dockertest.New(t)
+	f.Handle("GET /v1.43/containers/c1/stats", func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `{"cpu_stats":{"cpu_usage":{"total_usage":400},"system_cpu_usage":2000,"online_cpus":2},"precpu_stats":{"cpu_usage":{"total_usage":0},"system_cpu_usage":0}}`)
+	})
+	s, err := f.Client().StatsOnce(context.Background(), "c1")
+	if err != nil || s.CPUPercent != 0 {
+		t.Fatalf("s=%+v err=%v", s, err)
+	}
+}
+
+func TestStatsOnceFallsBackToPercpu(t *testing.T) {
+	f := dockertest.New(t)
+	f.Handle("GET /v1.43/containers/c1/stats", func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `{"cpu_stats":{"cpu_usage":{"total_usage":400,"percpu_usage":[1,2]},"system_cpu_usage":2000},"precpu_stats":{"cpu_usage":{"total_usage":200},"system_cpu_usage":1000}}`)
+	})
+	s, _ := f.Client().StatsOnce(context.Background(), "c1")
+	if s.CPUPercent != 40 {
+		t.Fatalf("s=%+v", s)
+	}
+}
+
+func TestLogsTailAll(t *testing.T) {
+	f := dockertest.New(t)
+	f.Handle("GET /v1.43/containers/c1/logs", func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("tail"); got != "all" {
+			t.Errorf("tail=%q", got)
+		}
+	})
+	rc, err := f.Client().Logs(context.Background(), "c1", 0, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rc.Close()
 }

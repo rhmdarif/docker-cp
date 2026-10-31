@@ -97,14 +97,35 @@ func TestRecreateRollsBackOnCreateFailure(t *testing.T) {
 
 func TestRecreateRollsBackOnStartFailure(t *testing.T) {
 	f, renames := recreateFake(t, 201, 500)
+	f.Handle("DELETE /v1.43/containers/new1", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(204) })
 	if _, err := f.Client().Recreate(context.Background(), "old1", "", nil); err == nil {
 		t.Fatal("want error")
 	}
 	inOrder(t, f.Calls(), []string{
+		"GET /v1.43/containers/old1/json", "POST /v1.43/images/create", "POST /v1.43/containers/old1/stop",
+		"POST /v1.43/containers/old1/rename", "POST /v1.43/containers/create",
 		"POST /v1.43/containers/new1/start", "DELETE /v1.43/containers/new1",
 		"POST /v1.43/containers/old1/rename", "POST /v1.43/containers/old1/start",
 	})
 	if len(*renames) != 2 || (*renames)[1] != "app" {
 		t.Errorf("renames=%v", *renames)
+	}
+}
+
+func TestRecreateReportsRollbackFailure(t *testing.T) {
+	// old container refuses to start again during rollback
+	f2, _ := recreateFake(t, 500, 204)
+	f2.Handle("GET /v1.43/containers/old2/json", func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, strings.Replace(inspectOld, "old1", "old2", 1))
+	})
+	f2.Handle("POST /v1.43/containers/old2/stop", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(204) })
+	f2.Handle("POST /v1.43/containers/old2/rename", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(204) })
+	f2.Handle("POST /v1.43/containers/old2/start", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(500)
+		io.WriteString(w, `{"message":"cannot start"}`)
+	})
+	_, err := f2.Client().Recreate(context.Background(), "old2", "", nil)
+	if err == nil || !strings.Contains(err.Error(), "rollback start") || !strings.Contains(err.Error(), "create") {
+		t.Fatalf("err=%v", err)
 	}
 }

@@ -17,7 +17,11 @@ import (
 // Logs streams stdout+stderr of a container. With a non-TTY container the
 // stream is multiplexed; pass it through DemuxLogs.
 func (c *Client) Logs(ctx context.Context, id string, tail int, follow bool) (io.ReadCloser, error) {
-	q := url.Values{"stdout": {"1"}, "stderr": {"1"}, "timestamps": {"0"}, "tail": {strconv.Itoa(tail)}}
+	tailStr := "all"
+	if tail > 0 {
+		tailStr = strconv.Itoa(tail)
+	}
+	q := url.Values{"stdout": {"1"}, "stderr": {"1"}, "timestamps": {"0"}, "tail": {tailStr}}
 	if follow {
 		q.Set("follow", "1")
 	} else {
@@ -62,7 +66,8 @@ func (c *Client) StatsOnce(ctx context.Context, id string) (Stats, error) {
 	var r struct {
 		CPU struct {
 			Usage struct {
-				Total uint64 `json:"total_usage"`
+				Total  uint64   `json:"total_usage"`
+				Percpu []uint64 `json:"percpu_usage"`
 			} `json:"cpu_usage"`
 			System     uint64 `json:"system_cpu_usage"`
 			OnlineCPUs uint64 `json:"online_cpus"`
@@ -81,15 +86,19 @@ func (c *Client) StatsOnce(ctx context.Context, id string) (Stats, error) {
 			} `json:"stats"`
 		} `json:"memory_stats"`
 	}
-	q := url.Values{"stream": {"false"}, "one-shot": {"true"}}
+	q := url.Values{"stream": {"false"}}
 	if err := c.getJSON(ctx, "/containers/"+esc(id)+"/stats", q, &r); err != nil {
 		return Stats{}, err
 	}
 	var s Stats
 	cpuDelta := float64(r.CPU.Usage.Total) - float64(r.PreCPU.Usage.Total)
 	sysDelta := float64(r.CPU.System) - float64(r.PreCPU.System)
-	if sysDelta > 0 && cpuDelta > 0 {
-		s.CPUPercent = cpuDelta / sysDelta * float64(r.CPU.OnlineCPUs) * 100
+	cpus := float64(r.CPU.OnlineCPUs)
+	if cpus == 0 {
+		cpus = float64(len(r.CPU.Usage.Percpu))
+	}
+	if r.PreCPU.System != 0 && sysDelta > 0 && cpuDelta > 0 {
+		s.CPUPercent = cpuDelta / sysDelta * cpus * 100
 	}
 	if r.Mem.Usage > r.Mem.Stats.InactiveFile {
 		s.MemUsage = r.Mem.Usage - r.Mem.Stats.InactiveFile
