@@ -36,6 +36,9 @@ type ContainerDetail struct {
 	Tty      bool
 	Spec     CreateSpec
 	State    string
+	// LivePorts are the currently published ports (NetworkSettings.Ports);
+	// empty while the container is not running.
+	LivePorts []PortBinding
 }
 
 type CreateSpec struct {
@@ -114,10 +117,13 @@ func (c *Client) Inspect(ctx context.Context, id string) (ContainerDetail, error
 		return ContainerDetail{}, err
 	}
 	var raw struct {
-		ID     string
-		Name   string
-		State  struct{ Status string }
-		Config struct{ Tty bool }
+		ID              string
+		Name            string
+		State           struct{ Status string }
+		Config          struct{ Tty bool }
+		NetworkSettings struct {
+			Ports map[string][]wirePortBinding
+		}
 	}
 	if err := json.Unmarshal(buf.Bytes(), &raw); err != nil {
 		return ContainerDetail{}, err
@@ -126,7 +132,10 @@ func (c *Client) Inspect(ctx context.Context, id string) (ContainerDetail, error
 	if err != nil {
 		return ContainerDetail{}, err
 	}
-	return ContainerDetail{ID: raw.ID, Name: strings.TrimPrefix(raw.Name, "/"), Tty: raw.Config.Tty, Spec: spec, State: raw.State.Status}, nil
+	return ContainerDetail{
+		ID: raw.ID, Name: strings.TrimPrefix(raw.Name, "/"), Tty: raw.Config.Tty, Spec: spec, State: raw.State.Status,
+		LivePorts: portsFromWire(raw.NetworkSettings.Ports),
+	}, nil
 }
 
 type wirePortBinding struct {
@@ -230,18 +239,7 @@ func SpecFromInspect(raw []byte) (CreateSpec, error) {
 	if nm := r.HostConfig.NetworkMode; nm != "default" {
 		s.Network = nm
 	}
-	for key, binds := range r.HostConfig.PortBindings {
-		cp, pr, _ := strings.Cut(key, "/")
-		cport, err := strconv.Atoi(cp)
-		if err != nil {
-			continue
-		}
-		for _, b := range binds {
-			hp, _ := strconv.Atoi(b.HostPort)
-			s.Ports = append(s.Ports, PortBinding{HostIP: b.HostIp, HostPort: hp, ContainerPort: cport, Proto: proto(pr)})
-		}
-	}
-	sortPorts(s.Ports)
+	s.Ports = portsFromWire(r.HostConfig.PortBindings)
 	for _, m := range r.Mounts {
 		src := m.Source
 		if m.Type == "volume" && m.Name != "" {
@@ -250,6 +248,24 @@ func SpecFromInspect(raw []byte) (CreateSpec, error) {
 		s.Mounts = append(s.Mounts, Mount{Type: m.Type, Source: src, Target: m.Destination, ReadOnly: !m.RW})
 	}
 	return s, nil
+}
+
+// portsFromWire converts a Docker "80/tcp" -> bindings map, sorted.
+func portsFromWire(m map[string][]wirePortBinding) []PortBinding {
+	var out []PortBinding
+	for key, binds := range m {
+		cp, pr, _ := strings.Cut(key, "/")
+		cport, err := strconv.Atoi(cp)
+		if err != nil {
+			continue
+		}
+		for _, b := range binds {
+			hp, _ := strconv.Atoi(b.HostPort)
+			out = append(out, PortBinding{HostIP: b.HostIp, HostPort: hp, ContainerPort: cport, Proto: proto(pr)})
+		}
+	}
+	sortPorts(out)
+	return out
 }
 
 func sortPorts(p []PortBinding) {

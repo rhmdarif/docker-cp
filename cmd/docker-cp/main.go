@@ -92,15 +92,17 @@ func runServe(cfg config.Config) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 
-	// Best effort: Caddy may not be up yet; applyCaddy logs any failure.
-	applyCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	srv.ApplyCaddy(applyCtx)
-	cancel()
-
 	hs := &http.Server{Addr: listen, Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	errc := make(chan error, 1)
 	go func() { errc <- hs.ListenAndServe() }()
 	log.Printf("docker-cp %s listening on %s", version, listen)
+
+	// Best effort, after the listener is up and bounded: Caddy or Docker may
+	// not be ready yet; applyCaddy logs any failure and Caddy keeps its
+	// previous config when Docker is unreachable.
+	applyCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	srv.ApplyCaddy(applyCtx)
+	cancel()
 
 	select {
 	case err := <-errc:

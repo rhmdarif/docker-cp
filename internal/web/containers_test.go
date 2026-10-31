@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"docker-cp/internal/docker/dockertest"
+	"docker-cp/internal/store"
 )
 
 const listJSON = `[{"Id":"abc","Names":["/klien-a"],"Image":"nginx:1","State":"running","Status":"Up 1 hour","Ports":[{"IP":"0.0.0.0","PrivatePort":80,"PublicPort":8001,"Type":"tcp"}],"Labels":{"com.docker.compose.project":"web"}}]`
@@ -27,6 +28,7 @@ func noneListening(int) bool { return false }
 
 func handleList(f *dockertest.Fake) {
 	f.Handle("GET /v1.43/containers/json", func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, listJSON) })
+	f.Handle("GET /v1.43/containers/klien-a/json", func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, inspectJSON) })
 }
 
 func get(t *testing.T, h http.Handler, target string) *httptest.ResponseRecorder {
@@ -194,6 +196,33 @@ func TestRemoveAppliesCaddy(t *testing.T) {
 	}
 	if !contains(fc.Calls(), "POST /load") {
 		t.Fatalf("caddy calls %v", fc.Calls())
+	}
+}
+
+func TestStartRestartApplyCaddy(t *testing.T) {
+	srv, f, fc, h := newTestServer(t)
+	handleList(f)
+	f.Handle("POST /v1.43/containers/abc/start", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(204) })
+	f.Handle("POST /v1.43/containers/abc/restart", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(204) })
+	c, csrf := login(t, h)
+	// No container-backed site: Caddy is left alone.
+	request(t, h, "POST", "/containers/abc/start", url.Values{}, c, csrf)
+	if contains(fc.Calls(), "POST /load") {
+		t.Fatalf("unexpected caddy load %v", fc.Calls())
+	}
+	srv.d.Store.Update(func(st *store.State) error {
+		st.Sites = []store.Site{{ID: "s1", Domains: []string{"a.example.com"}, Target: store.Target{Container: "klien-a", ContainerPort: 80}}}
+		return nil
+	})
+	for _, action := range []string{"start", "restart"} {
+		before := len(fc.Calls())
+		resp := request(t, h, "POST", "/containers/abc/"+action, url.Values{}, c, csrf)
+		if resp.Code != 200 || !contains(fc.Calls()[before:], "POST /load") {
+			t.Fatalf("%s: status %d caddy calls %v", action, resp.Code, fc.Calls())
+		}
+		if !strings.Contains(fc.LastLoad(), "reverse_proxy 127.0.0.1:8001") {
+			t.Fatalf("%s: loaded %q", action, fc.LastLoad())
+		}
 	}
 }
 

@@ -281,19 +281,24 @@ func (s *Server) containerAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var warnings []string
-	if action == "remove" && err == nil {
-		warnings = s.applyCaddy(ctx)
-		if len(warnings) == 0 {
-			// Empty body: htmx swaps the row away.
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			return
-		}
+	if err == nil && (action == "remove" || (action == "start" || action == "restart") && s.hasContainerSites()) {
+		// Detached: a client disconnect must not abort a Caddy reload halfway.
+		actx, acancel := detached(r)
+		warnings = s.applyCaddy(actx)
+		acancel()
+	}
+	if action == "remove" && err == nil && len(warnings) == 0 {
+		// Empty body: htmx swaps the row away.
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		return
 	}
 	row := containerRow{}
 	if err != nil {
 		row.Err = err.Error()
-	} else if len(warnings) > 0 {
+	} else if len(warnings) > 0 && action == "remove" {
 		row.Err = "Container dihapus. " + strings.Join(warnings, " ")
+	} else if len(warnings) > 0 {
+		row.Err = "Caddy: " + strings.Join(warnings, " ")
 	}
 	cs, lerr := s.d.Docker.ListContainers(ctx)
 	if lerr != nil && row.Err == "" {
@@ -311,6 +316,17 @@ func (s *Server) containerAction(w http.ResponseWriter, r *http.Request) {
 		row.ID, row.Name = id, id
 	}
 	s.renderFragment(w, "containers", "container_row", row)
+}
+
+// hasContainerSites reports whether any stored site proxies to a container,
+// i.e. whether a container start/restart can change the Caddy config.
+func (s *Server) hasContainerSites() bool {
+	for _, site := range s.d.Store.Get().Sites {
+		if !site.Manual && site.Target.Container != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // ---- logs ----

@@ -20,9 +20,14 @@ type Applier struct {
 }
 
 // Apply runs Generate -> Adapt -> verify -> Load -> atomic write of Path.
-// Path is left untouched unless Caddy accepted the config.
+// Path is left untouched unless Caddy accepted the config. A resolver failure
+// other than ErrUnavailable (Docker unreachable or timing out) aborts before
+// anything is sent to Caddy, so the running config stays as it is.
 func (a *Applier) Apply(ctx context.Context, st store.State) ([]string, error) {
-	cf, warnings := Generate(st, a.Resolve)
+	cf, warnings, err := Generate(ctx, st, a.Resolve)
+	if err != nil {
+		return warnings, err
+	}
 	adapted, err := a.Admin.Adapt(ctx, cf)
 	if err != nil {
 		return warnings, err
@@ -122,28 +127,41 @@ func writeAtomic(path string, data []byte) error {
 	return os.Rename(tmp, path)
 }
 
-// DockerResolver resolves a container target to its published host port on
-// 127.0.0.1. A target with only Host set is returned unchanged.
+// DockerResolver resolves a container target to 127.0.0.1:<host port> using
+// the container's configured port bindings (HostConfig.PortBindings), which
+// stay valid while it is stopped or restarting; Caddy itself answers 502 while
+// the upstream is not listening. A target with only Host set is returned
+// unchanged. A missing container or missing binding wraps ErrUnavailable; any
+// other Docker error is returned as-is so Apply aborts.
 func DockerResolver(dc *docker.Client) Resolver {
-	return func(t store.Target) (string, error) {
-		if t.Container == "" && t.Host != "" {
-			return t.Host, nil
-		}
-		cs, err := dc.ListContainers(context.Background())
-		if err != nil {
-			return "", err
-		}
-		for _, c := range cs {
-			if c.Name != t.Container {
-				continue
+	return func(ctx context.Context, t store.Target) (string, error) {
+		if t.Container == "" {
+			if t.Host != "" {
+				return t.Host, nil
 			}
-			for _, p := range c.Ports {
-				if t.ContainerPort == 0 || p.ContainerPort == t.ContainerPort {
+			return "", fmt.Errorf("%w: target kosong", ErrUnavailable)
+		}
+		d, err := dc.Inspect(ctx, t.Container)
+		if docker.IsNotFound(err) {
+			return "", fmt.Errorf("%w: container %q tidak ditemukan", ErrUnavailable, t.Container)
+		}
+		if err != nil {
+			return "", fmt.Errorf("docker: %w", err)
+		}
+		for _, ports := range [][]docker.PortBinding{d.Spec.Ports, d.LivePorts} {
+			for _, p := range ports {
+				if p.HostPort > 0 && proto(p.Proto) == "tcp" && (t.ContainerPort == 0 || p.ContainerPort == t.ContainerPort) {
 					return fmt.Sprintf("127.0.0.1:%d", p.HostPort), nil
 				}
 			}
-			return "", fmt.Errorf("container tidak mem-publish port")
 		}
-		return "", fmt.Errorf("container %q tidak ditemukan", t.Container)
+		return "", fmt.Errorf("%w: container tidak mem-publish port", ErrUnavailable)
 	}
+}
+
+func proto(p string) string {
+	if p == "" {
+		return "tcp"
+	}
+	return p
 }

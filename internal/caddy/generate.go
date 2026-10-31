@@ -3,21 +3,41 @@
 package caddy
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"docker-cp/internal/store"
 )
 
 // Resolver maps a site target to an upstream such as "127.0.0.1:8001".
-type Resolver func(t store.Target) (upstream string, err error)
+// An error wrapping ErrUnavailable means the target does not exist or has no
+// matching port (the site answers 502); any other error (e.g. Docker
+// unreachable) aborts the whole Generate.
+type Resolver func(ctx context.Context, t store.Target) (upstream string, err error)
+
+// ErrUnavailable marks a target that cannot be served right now.
+var ErrUnavailable = errors.New("target tidak tersedia")
+
+// resolveTimeout bounds all target resolution in one Generate call.
+var resolveTimeout = 10 * time.Second
 
 const unavailableLine = `respond "docker-cp: target tidak tersedia" 502`
 
-// Generate renders the full Caddyfile. Sites whose target cannot be resolved
-// still get a block (answering 502) so one missing container never affects
-// the others; each such site adds a warning.
-func Generate(st store.State, resolve Resolver) (caddyfile string, warnings []string) {
+// Generate renders the full Caddyfile. Sites whose target is unavailable
+// (ErrUnavailable) still get a block answering 502 so one missing container
+// never affects the others; each such site adds a warning. Any other resolver
+// error is returned and no Caddyfile is produced.
+func Generate(ctx context.Context, st store.State, resolve Resolver) (caddyfile string, warnings []string, err error) {
+	ctx, cancel := context.WithTimeout(ctx, resolveTimeout)
+	defer cancel()
+	type result struct {
+		upstream string
+		err      error
+	}
+	memo := map[store.Target]result{}
 	var blocks []string
 
 	global := "{\n\tadmin localhost:2019\n"
@@ -63,8 +83,15 @@ func Generate(st store.State, resolve Resolver) (caddyfile string, warnings []st
 			}
 		}
 		body := unavailableLine
-		upstream, err := resolve(s.Target)
-		if err != nil {
+		res, ok := memo[s.Target]
+		if !ok {
+			res.upstream, res.err = resolve(ctx, s.Target)
+			memo[s.Target] = res
+		}
+		upstream, err := res.upstream, res.err
+		if err != nil && !errors.Is(err, ErrUnavailable) {
+			return "", warnings, fmt.Errorf("site %s: %w", s.Domains[0], err)
+		} else if err != nil {
 			warnings = append(warnings, fmt.Sprintf("%s: %v", s.Domains[0], err))
 		} else if err := ValidateUpstream(upstream); err != nil {
 			warnings = append(warnings, fmt.Sprintf("site %s dilewati: target tidak valid: %v", s.ID, err))
@@ -88,7 +115,7 @@ func Generate(st store.State, resolve Resolver) (caddyfile string, warnings []st
 		sb.WriteString("}")
 		blocks = append(blocks, sb.String())
 	}
-	return strings.Join(blocks, "\n\n") + "\n", warnings
+	return strings.Join(blocks, "\n\n") + "\n", warnings, nil
 }
 
 func unsafeDomain(d string) bool { return unsafeToken(d) || strings.Contains(d, ",") }

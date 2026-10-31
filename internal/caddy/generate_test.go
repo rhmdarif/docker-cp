@@ -1,18 +1,21 @@
 package caddy
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"docker-cp/internal/store"
 )
 
-func fakeResolve(t store.Target) (string, error) {
+func fakeResolve(_ context.Context, t store.Target) (string, error) {
 	if t.Container != "" {
 		if t.Container == "gone" {
-			return "", errors.New("container gone tidak ditemukan")
+			return "", fmt.Errorf("%w: container gone tidak ditemukan", ErrUnavailable)
 		}
 		return "127.0.0.1:8001", nil
 	}
@@ -27,7 +30,7 @@ func TestGenerateBasic(t *testing.T) {
 			{ID: "2", Domains: []string{"b.klien.com"}, Target: store.Target{Host: "10.0.0.5:3000"}, Custom: "encode gzip\nheader X-A 1"},
 		},
 	}
-	got, warns := Generate(st, fakeResolve)
+	got, warns := gen(t, st, fakeResolve)
 	want, err := os.ReadFile("testdata/basic.caddyfile")
 	if err != nil {
 		t.Fatal(err)
@@ -41,7 +44,7 @@ func TestGenerateBasic(t *testing.T) {
 }
 
 func TestGenerateNoEmailNoPanel(t *testing.T) {
-	got, _ := Generate(store.State{Settings: store.Settings{PanelPort: 8800}}, fakeResolve)
+	got, _ := gen(t, store.State{Settings: store.Settings{PanelPort: 8800}}, fakeResolve)
 	if got != "{\n\tadmin localhost:2019\n}\n" {
 		t.Fatalf("got %q", got)
 	}
@@ -55,7 +58,10 @@ func TestGenerateManual(t *testing.T) {
 			{ID: "m", Manual: true, ManualBlock: "\n" + blk + "\n\n", Target: store.Target{Container: "gone"}},
 		},
 	}
-	got, warns := Generate(st, func(store.Target) (string, error) { t.Fatal("resolve called for manual"); return "", nil })
+	got, warns := gen(t, st, func(context.Context, store.Target) (string, error) {
+		t.Fatal("resolve called for manual")
+		return "", nil
+	})
 	if !strings.HasSuffix(got, "\n\n"+blk+"\n") {
 		t.Fatalf("got %q", got)
 	}
@@ -72,7 +78,7 @@ func TestGenerateMissingContainer(t *testing.T) {
 			{ID: "b", Domains: []string{"b.com"}, Target: store.Target{Container: "web"}},
 		},
 	}
-	got, warns := Generate(st, fakeResolve)
+	got, warns := gen(t, st, fakeResolve)
 	if !strings.Contains(got, "a.com {\n\trespond \"docker-cp: target tidak tersedia\" 502\n\tencode gzip\n}") {
 		t.Fatalf("block A wrong:\n%s", got)
 	}
@@ -86,7 +92,7 @@ func TestGenerateMissingContainer(t *testing.T) {
 
 func TestGenerateSkipsSiteWithoutDomains(t *testing.T) {
 	st := store.State{Sites: []store.Site{{ID: "x", Target: store.Target{Host: "1.2.3.4:80"}}}}
-	got, warns := Generate(st, fakeResolve)
+	got, warns := gen(t, st, fakeResolve)
 	if strings.Contains(got, "reverse_proxy") || len(warns) != 1 {
 		t.Fatalf("got %q warns %v", got, warns)
 	}
@@ -100,7 +106,7 @@ func TestGenerateDefensive(t *testing.T) {
 			{ID: "2", Domains: []string{"ok.com"}, Target: store.Target{Host: "1.2.3.4:80"}},
 		},
 	}
-	got, warns := Generate(st, fakeResolve)
+	got, warns := gen(t, st, fakeResolve)
 	if strings.Contains(got, "evil") || strings.Contains(got, "p.com") || strings.Contains(got, "email") {
 		t.Fatalf("unsafe output:\n%s", got)
 	}
@@ -118,7 +124,7 @@ func TestGenerateRevalidatesStoredInput(t *testing.T) {
 			{ID: "3", Domains: []string{"ok.com"}, Target: store.Target{Host: "1.2.3.4:80"}},
 		},
 	}
-	got, warns := Generate(st, fakeResolve)
+	got, warns := gen(t, st, fakeResolve)
 	if strings.Contains(got, "evil") || strings.Contains(got, "debug") || strings.Contains(got, "a.com") {
 		t.Fatalf("bad stored data emitted:\n%s", got)
 	}
@@ -137,13 +143,13 @@ func TestGenerateSkipsInvalidUpstream(t *testing.T) {
 			{ID: "4", Domains: []string{"ok.com"}, Target: store.Target{Host: "1.2.3.4:80"}},
 		},
 	}
-	resolve := func(tg store.Target) (string, error) {
+	resolve := func(_ context.Context, tg store.Target) (string, error) {
 		if tg.Container != "" {
 			return "127.0.0.1:80 {", nil // a resolver must never be trusted blindly
 		}
 		return tg.Host, nil
 	}
-	got, warns := Generate(st, resolve)
+	got, warns := gen(t, st, resolve)
 	for _, s := range []string{"evil", "pwn", "root", "a.com", "b.com", "c.com"} {
 		if strings.Contains(got, s) {
 			t.Fatalf("%q emitted:\n%s", s, got)
@@ -151,5 +157,49 @@ func TestGenerateSkipsInvalidUpstream(t *testing.T) {
 	}
 	if !strings.Contains(got, "ok.com {") || len(warns) != 3 {
 		t.Fatalf("got %s warns %v", got, warns)
+	}
+}
+
+func gen(t *testing.T, st store.State, r Resolver) (string, []string) {
+	t.Helper()
+	cf, w, err := Generate(context.Background(), st, r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cf, w
+}
+
+func TestGenerateAbortsOnResolverFailure(t *testing.T) {
+	st := store.State{Sites: []store.Site{{ID: "a", Domains: []string{"a.com"}, Target: store.Target{Container: "web"}}}}
+	boom := errors.New("dial unix /var/run/docker.sock: connect: no such file")
+	_, _, err := Generate(context.Background(), st, func(context.Context, store.Target) (string, error) { return "", boom })
+	if !errors.Is(err, boom) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestGenerateResolvesEachTargetOnce(t *testing.T) {
+	st := store.State{Sites: []store.Site{
+		{ID: "a", Domains: []string{"a.com"}, Target: store.Target{Container: "web", ContainerPort: 80}},
+		{ID: "b", Domains: []string{"b.com"}, Target: store.Target{Container: "web", ContainerPort: 80}},
+	}}
+	n := 0
+	gen(t, st, func(context.Context, store.Target) (string, error) { n++; return "127.0.0.1:8001", nil })
+	if n != 1 {
+		t.Fatalf("resolver called %d times", n)
+	}
+}
+
+func TestGenerateResolveDeadline(t *testing.T) {
+	old := resolveTimeout
+	resolveTimeout = 50 * time.Millisecond
+	defer func() { resolveTimeout = old }()
+	st := store.State{Sites: []store.Site{{ID: "a", Domains: []string{"a.com"}, Target: store.Target{Container: "web"}}}}
+	_, _, err := Generate(context.Background(), st, func(ctx context.Context, _ store.Target) (string, error) {
+		<-ctx.Done()
+		return "", ctx.Err()
+	})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v", err)
 	}
 }
