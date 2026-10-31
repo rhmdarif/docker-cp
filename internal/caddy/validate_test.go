@@ -245,3 +245,32 @@ func TestWildcardSymmetric(t *testing.T) {
 		t.Error("ValidateDomains must collide with wildcard panel domain")
 	}
 }
+
+func TestValidateUpstream(t *testing.T) {
+	for _, ok := range []string{"127.0.0.1:8080", "[::1]:80", "app.internal:3000", "localhost:1", "10.0.0.2:65535"} {
+		if err := ValidateUpstream(ok); err != nil {
+			t.Errorf("%q: %v", ok, err)
+		}
+	}
+	for _, bad := range []string{
+		"[fe80::1%eth0]:80",
+		"[fe80::1%x}\nevil.com {\n\trespond pwn]:80",
+		"127.0.0.1:80\nroot * /",
+		"127.0.0.1:80 {",
+		"a b:80",
+		"{$HOST}:80",
+		"host}:80",
+		"127.0.0.1",
+		"127.0.0.1:",
+		"127.0.0.1:0",
+		"127.0.0.1:70000",
+		"127.0.0.1:+80",
+		"[1.2.3.4]:80",
+		"-bad.host:80",
+		"",
+	} {
+		if err := ValidateUpstream(bad); err == nil {
+			t.Errorf("accepted %q", bad)
+		}
+	}
+}

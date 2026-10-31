@@ -56,10 +56,19 @@ func Generate(st store.State, resolve Resolver) (caddyfile string, warnings []st
 			warnings = append(warnings, fmt.Sprintf("site %s dilewati: custom tidak valid: %v", s.ID, err))
 			continue
 		}
+		if s.Target.Container == "" {
+			if err := ValidateUpstream(s.Target.Host); err != nil {
+				warnings = append(warnings, fmt.Sprintf("site %s dilewati: target tidak valid: %v", s.ID, err))
+				continue
+			}
+		}
 		body := unavailableLine
 		upstream, err := resolve(s.Target)
 		if err != nil {
 			warnings = append(warnings, fmt.Sprintf("%s: %v", s.Domains[0], err))
+		} else if err := ValidateUpstream(upstream); err != nil {
+			warnings = append(warnings, fmt.Sprintf("site %s dilewati: target tidak valid: %v", s.ID, err))
+			continue
 		} else {
 			body = "reverse_proxy " + upstream
 		}

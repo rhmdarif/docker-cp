@@ -6,11 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"net"
 	"net/http"
-	"net/netip"
 	"net/url"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -52,9 +49,9 @@ func invalid(err error) error {
 var errSiteNotFound = &formError{http.StatusNotFound, "Site tidak ditemukan."}
 
 // applyFailure converts an Apply/Adapt error: Caddy's own message verbatim
-// (422), an unreachable Caddy as 502, anything else (e.g. host
-// verification) as 422.
-func applyFailure(err error) error {
+// (422), an unreachable Caddy as 502, a Caddyfile write failure after a
+// successful load as 500, anything else (e.g. host verification) as 422.
+func applyFailure(err error) *formError {
 	var ce *caddy.CaddyError
 	if errors.As(err, &ce) {
 		return &formError{http.StatusUnprocessableEntity, ce.Message}
@@ -63,25 +60,53 @@ func applyFailure(err error) error {
 	if errors.As(err, &ue) {
 		return &formError{http.StatusBadGateway, "Caddy tidak terhubung: " + err.Error()}
 	}
+	var we *caddy.WriteError
+	if errors.As(err, &we) {
+		return &formError{http.StatusInternalServerError, "Gagal menerapkan konfigurasi Caddy: " + err.Error()}
+	}
 	return &formError{http.StatusUnprocessableEntity, "Gagal menerapkan konfigurasi Caddy: " + err.Error()}
 }
 
+// mayHaveLoaded reports whether an Apply error can occur after Caddy already
+// loaded the candidate: the Caddyfile write failed, or the connection broke
+// (possibly during /load).
+func mayHaveLoaded(err error) bool {
+	var we *caddy.WriteError
+	var ue *url.Error
+	return errors.As(err, &we) || errors.As(err, &ue)
+}
+
+// rollback re-applies prev after Caddy may have loaded a config that is not
+// persisted, and returns the sentence to append to the error shown. A write
+// failure during rollback still counts as restored: Caddy loaded prev, and
+// the Caddyfile on disk was never replaced.
+func (s *Server) rollback(ctx context.Context, prev store.State) string {
+	_, err := s.d.Caddy.Apply(ctx, prev)
+	var we *caddy.WriteError
+	if err == nil || errors.As(err, &we) {
+		return " Konfigurasi Caddy sebelumnya dipulihkan."
+	}
+	log.Printf("caddy: rollback: %v", err)
+	return " Pemulihan gagal (" + err.Error() + "): Caddy mungkin menjalankan konfigurasi yang belum tersimpan."
+}
+
 // commit applies candidate and, only if Caddy accepted it, persists the part
-// of the state chosen by save. Must be called inside withApplyLock. If
-// persisting fails, the previous state is re-applied (best effort).
+// of the state chosen by save. Must be called inside withApplyLock. If Caddy
+// may be running the candidate without it being saved, prev is re-applied.
 func (s *Server) commit(ctx context.Context, prev, candidate store.State, save func(*store.State)) ([]string, error) {
 	warnings, err := s.d.Caddy.Apply(ctx, candidate)
 	for _, w := range warnings {
 		log.Printf("caddy: warning: %s", w)
 	}
 	if err != nil {
-		return warnings, applyFailure(err)
+		fe := applyFailure(err)
+		if mayHaveLoaded(err) {
+			fe.msg += s.rollback(ctx, prev)
+		}
+		return warnings, fe
 	}
 	if err := s.d.Store.Update(func(st *store.State) error { save(st); return nil }); err != nil {
-		if _, rerr := s.d.Caddy.Apply(ctx, prev); rerr != nil {
-			log.Printf("caddy: rollback after store failure: %v", rerr)
-		}
-		return warnings, &formError{http.StatusInternalServerError, "Gagal menyimpan state: " + err.Error()}
+		return warnings, &formError{http.StatusInternalServerError, "Gagal menyimpan state: " + err.Error() + "." + s.rollback(ctx, prev)}
 	}
 	return warnings, nil
 }
@@ -142,8 +167,13 @@ func (s *Server) withContainers(ctx context.Context, f *siteFormData) {
 	defer cancel()
 	cs, err := s.d.Docker.ListContainers(ctx)
 	if err != nil {
-		f.DockerError = "Docker tidak terhubung: " + err.Error() + ". Hanya target host yang tersedia."
-		f.TargetType = "host"
+		f.DockerError = "Docker tidak terhubung: " + err.Error() + "."
+		if f.Container == "" {
+			f.DockerError += " Hanya target host yang tersedia."
+			f.TargetType = "host"
+		} else {
+			f.Containers = []string{f.Container}
+		}
 		return
 	}
 	for _, c := range cs {
@@ -269,7 +299,7 @@ func (s *Server) buildSite(ctx context.Context, f siteFormData, id string, st st
 		}
 		adapted, err := s.d.Caddy.Admin.Adapt(ctx, block)
 		if err != nil {
-			return store.Site{}, applyFailure(err)
+			return store.Site{}, applyFailure(err) // Adapt never loads
 		}
 		var others []string
 		for _, o := range st.Sites {
@@ -315,8 +345,6 @@ func (s *Server) buildSite(ctx context.Context, f siteFormData, id string, st st
 	return store.Site{ID: id, Domains: domains, Target: target, Custom: custom}, nil
 }
 
-var hostNameRe = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?$`)
-
 func parseTarget(f siteFormData) (store.Target, error) {
 	switch f.TargetType {
 	case "container":
@@ -333,30 +361,13 @@ func parseTarget(f siteFormData) (store.Target, error) {
 		}
 		return store.Target{Container: f.Container, ContainerPort: port}, nil
 	case "host":
-		if err := validUpstream(f.Host); err != nil {
-			return store.Target{}, err
+		if err := caddy.ValidateUpstream(f.Host); err != nil {
+			return store.Target{}, fmt.Errorf("target host tidak valid: %w", err)
 		}
 		return store.Target{Host: f.Host}, nil
 	default:
 		return store.Target{}, errors.New("jenis target tidak valid")
 	}
-}
-
-// validUpstream accepts host:port where host is an IP or a hostname. The
-// value is written verbatim after reverse_proxy, so nothing else may pass.
-func validUpstream(hp string) error {
-	bad := fmt.Errorf("target host harus berbentuk host:port, mis. 127.0.0.1:9000: %q", hp)
-	host, port, err := net.SplitHostPort(hp)
-	if err != nil {
-		return bad
-	}
-	if p, err := strconv.Atoi(port); err != nil || p < 1 || p > 65535 {
-		return bad
-	}
-	if _, err := netip.ParseAddr(host); err != nil && !hostNameRe.MatchString(host) {
-		return bad
-	}
-	return nil
 }
 
 // adaptedHosts returns the lowercased, de-duplicated host matchers of the

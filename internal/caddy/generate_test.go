@@ -126,3 +126,30 @@ func TestGenerateRevalidatesStoredInput(t *testing.T) {
 		t.Fatalf("got %s warns %v", got, warns)
 	}
 }
+
+func TestGenerateSkipsInvalidUpstream(t *testing.T) {
+	st := store.State{
+		Settings: store.Settings{PanelPort: 8800},
+		Sites: []store.Site{
+			{ID: "1", Domains: []string{"a.com"}, Target: store.Target{Host: "[fe80::1%x}\nevil.com {\n\trespond pwn]:80"}},
+			{ID: "2", Domains: []string{"b.com"}, Target: store.Target{Host: "1.2.3.4:80\n\troot * /"}},
+			{ID: "3", Domains: []string{"c.com"}, Target: store.Target{Container: "app"}},
+			{ID: "4", Domains: []string{"ok.com"}, Target: store.Target{Host: "1.2.3.4:80"}},
+		},
+	}
+	resolve := func(tg store.Target) (string, error) {
+		if tg.Container != "" {
+			return "127.0.0.1:80 {", nil // a resolver must never be trusted blindly
+		}
+		return tg.Host, nil
+	}
+	got, warns := Generate(st, resolve)
+	for _, s := range []string{"evil", "pwn", "root", "a.com", "b.com", "c.com"} {
+		if strings.Contains(got, s) {
+			t.Fatalf("%q emitted:\n%s", s, got)
+		}
+	}
+	if !strings.Contains(got, "ok.com {") || len(warns) != 3 {
+		t.Fatalf("got %s warns %v", got, warns)
+	}
+}

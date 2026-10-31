@@ -67,6 +67,8 @@ type fakeCaddy struct {
 	adaptResult string // non-empty: replaces the computed /adapt result JSON
 	loadStatus  int    // non-zero: /load answers this status with loadBody
 	loadBody    string
+	loadOK      int // with loadStatus: the first loadOK /load calls still succeed
+	loads       int
 }
 
 func newFakeCaddy(t *testing.T) *fakeCaddy {
@@ -101,7 +103,8 @@ func (fc *fakeCaddy) serve(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, `{"result":`+res+`}`)
 	case "/load":
 		fc.lastLoad = string(body)
-		if fc.loadStatus != 0 {
+		fc.loads++
+		if fc.loadStatus != 0 && fc.loads > fc.loadOK {
 			w.WriteHeader(fc.loadStatus)
 			io.WriteString(w, fc.loadBody)
 		}

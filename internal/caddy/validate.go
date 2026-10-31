@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/netip"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -65,6 +67,41 @@ func ValidateDomains(domains []string, siteID string, all []store.Site, panelDom
 		out = append(out, d)
 	}
 	return out, nil
+}
+
+var upstreamHostRe = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?$`)
+
+// ValidateUpstream checks a reverse_proxy upstream, which is written verbatim
+// into the Caddyfile. Accepted: IPv4:port, [IPv6 without zone]:port and
+// hostname:port (letters, digits, "-", "."), port 1-65535.
+func ValidateUpstream(hostport string) error {
+	bad := fmt.Errorf("upstream harus berbentuk host:port, mis. 127.0.0.1:9000: %q", hostport)
+	if unsafeToken(hostport) || strings.ContainsFunc(hostport, unicode.IsControl) || strings.Contains(hostport, "{$") {
+		return bad
+	}
+	host, port, err := net.SplitHostPort(hostport)
+	if err != nil || port == "" || strings.Trim(port, "0123456789") != "" {
+		return bad
+	}
+	if p, err := strconv.Atoi(port); err != nil || p < 1 || p > 65535 {
+		return bad
+	}
+	if strings.HasPrefix(hostport, "[") {
+		if a, err := netip.ParseAddr(host); err != nil || !a.Is6() || a.Zone() != "" {
+			return bad
+		}
+		return nil
+	}
+	if a, err := netip.ParseAddr(host); err == nil {
+		if !a.Is4() {
+			return bad
+		}
+		return nil
+	}
+	if !upstreamHostRe.MatchString(host) {
+		return bad
+	}
+	return nil
 }
 
 // ValidateCustom checks that custom directives cannot leave their site block.

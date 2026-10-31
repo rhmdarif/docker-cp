@@ -11,7 +11,7 @@
     </label>
     <fieldset>
       <legend>Target</legend>
-      {{if not .Data.DockerError}}
+      {{if or (not .Data.DockerError) .Data.Containers}}
       <label class="check"><input type="radio" name="target_type" value="container"{{if eq .Data.TargetType "container"}} checked{{end}}> Container</label>
       <label>Container
         <select name="container">

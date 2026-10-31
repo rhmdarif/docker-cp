@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -238,5 +239,80 @@ func TestSiteFormWithoutDocker(t *testing.T) {
 	}
 	if strings.Contains(body, `value="container"`) {
 		t.Fatal("container option offered without Docker")
+	}
+}
+
+func TestCreateSiteHostInjectionRejected(t *testing.T) {
+	srv, _, fc, h := newTestServer(t)
+	c, csrf := login(t, h)
+	for _, host := range []string{
+		"[fe80::1%x}\nevil.com {\n\trespond pwn]:80",
+		"[fe80::1%eth0]:80",
+		"127.0.0.1:80\nroot * /",
+		"127.0.0.1 :80",
+		"127.0.0.1:80}",
+		"{$H}:80",
+	} {
+		form := url.Values{"domains": {"a.klien.com"}, "target_type": {"host"}, "host": {host}}
+		if rec := request(t, h, "POST", "/sites", form, c, csrf); rec.Code != http.StatusUnprocessableEntity {
+			t.Errorf("%q: status %d", host, rec.Code)
+		}
+	}
+	if len(fc.Calls()) != 0 || len(srv.d.Store.Get().Sites) != 0 {
+		t.Fatalf("calls %v sites %v", fc.Calls(), srv.d.Store.Get().Sites)
+	}
+}
+
+func TestEditContainerSiteWithoutDocker(t *testing.T) {
+	srv, _, _, h := newTestServer(t) // Docker unreachable
+	seedSite(t, srv, store.Site{ID: "s1", Domains: []string{"a.klien.com"}, Target: store.Target{Container: "klien-a", ContainerPort: 80}})
+	body := get(t, h, "/sites/s1").Body.String()
+	if !strings.Contains(body, `value="container" checked`) || !strings.Contains(body, `<option value="klien-a" selected>`) ||
+		!strings.Contains(body, "Docker tidak terhubung") {
+		t.Fatalf("stored container target not kept: %s", body)
+	}
+}
+
+// failingWriteServer makes Applier's Caddyfile write fail after /load.
+func failingWriteServer(t *testing.T, srv *Server) {
+	t.Helper()
+	srv.d.Caddy.Path = filepath.Join(t.TempDir(), "missing-dir", "Caddyfile")
+}
+
+func TestCreateSiteWriteFailureRollsBack(t *testing.T) {
+	srv, _, fc, h := newTestServer(t)
+	failingWriteServer(t, srv)
+	c, csrf := login(t, h)
+	form := url.Values{"domains": {"a.klien.com"}, "target_type": {"host"}, "host": {"127.0.0.1:9000"}}
+	rec := request(t, h, "POST", "/sites", form, c, csrf)
+	if rec.Code != http.StatusInternalServerError || !strings.Contains(rec.Body.String(), "dipulihkan") {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	loads := 0
+	for _, c := range fc.Calls() {
+		if c == "POST /load" {
+			loads++
+		}
+	}
+	if loads != 2 || strings.Contains(fc.LastLoad(), "a.klien.com") {
+		t.Fatalf("expected rollback load of previous config; loads=%d last:\n%s", loads, fc.LastLoad())
+	}
+	if len(srv.d.Store.Get().Sites) != 0 {
+		t.Fatal("persisted")
+	}
+}
+
+func TestCreateSiteWriteFailureRollbackFails(t *testing.T) {
+	srv, _, fc, h := newTestServer(t)
+	failingWriteServer(t, srv)
+	fc.configure(func(fc *fakeCaddy) { fc.loadOK = 1; fc.loadStatus = 500; fc.loadBody = `{"error":"down"}` })
+	c, csrf := login(t, h)
+	form := url.Values{"domains": {"a.klien.com"}, "target_type": {"host"}, "host": {"127.0.0.1:9000"}}
+	rec := request(t, h, "POST", "/sites", form, c, csrf)
+	if rec.Code != http.StatusInternalServerError || !strings.Contains(rec.Body.String(), "belum tersimpan") {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	if len(srv.d.Store.Get().Sites) != 0 {
+		t.Fatal("persisted")
 	}
 }

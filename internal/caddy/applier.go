@@ -34,10 +34,17 @@ func (a *Applier) Apply(ctx context.Context, st store.State) ([]string, error) {
 		return warnings, err
 	}
 	if err := writeAtomic(a.Path, []byte(cf)); err != nil {
-		return warnings, fmt.Errorf("gagal menulis Caddyfile: %w", err)
+		return warnings, &WriteError{Err: err}
 	}
 	return warnings, nil
 }
+
+// WriteError reports that Caddy accepted (loaded) the config but writing the
+// Caddyfile failed, so the running config is not persisted.
+type WriteError struct{ Err error }
+
+func (e *WriteError) Error() string { return "gagal menulis Caddyfile: " + e.Err.Error() }
+func (e *WriteError) Unwrap() error { return e.Err }
 
 func expectedHosts(st store.State) []string {
 	var out []string
