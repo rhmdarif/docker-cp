@@ -54,10 +54,12 @@ func ValidateDomains(domains []string, siteID string, all []store.Site, panelDom
 			return nil, fmt.Errorf("domain duplikat: %s", d)
 		}
 		seen[d] = true
-		if used[d] {
-			return nil, fmt.Errorf("domain sudah dipakai site lain: %s", d)
+		for u := range used {
+			if hostsOverlap(d, u) {
+				return nil, fmt.Errorf("domain sudah dipakai site lain: %s", d)
+			}
 		}
-		if d == panel {
+		if panel != "" && hostsOverlap(d, panel) {
 			return nil, fmt.Errorf("domain sudah dipakai panel: %s", d)
 		}
 		out = append(out, d)
@@ -198,28 +200,25 @@ func ValidateManualAdapted(adapted json.RawMessage, otherDomains []string) error
 }
 
 func checkHost(h string, others map[string]bool) error {
-	if others[h] {
-		return fmt.Errorf("domain sudah dipakai site lain: %s", h)
-	}
-	if !strings.Contains(h, "*") {
-		return nil
-	}
-	hl := strings.Split(h, ".")
 	for o := range others {
-		ol := strings.Split(o, ".")
-		if len(ol) != len(hl) {
-			continue
-		}
-		match := true
-		for i := range hl {
-			if hl[i] != "*" && hl[i] != ol[i] {
-				match = false
-				break
-			}
-		}
-		if match {
-			return fmt.Errorf("domain sudah dipakai site lain: %s (cocok dengan %s)", o, h)
+		if hostsOverlap(h, o) {
+			return fmt.Errorf("domain sudah dipakai site lain: %s", o)
 		}
 	}
 	return nil
+}
+
+// hostsOverlap matches label by label; a "*" label on either side matches any
+// single label.
+func hostsOverlap(a, b string) bool {
+	al, bl := strings.Split(a, "."), strings.Split(b, ".")
+	if len(al) != len(bl) {
+		return false
+	}
+	for i := range al {
+		if al[i] != bl[i] && al[i] != "*" && bl[i] != "*" {
+			return false
+		}
+	}
+	return true
 }

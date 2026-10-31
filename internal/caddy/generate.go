@@ -36,7 +36,10 @@ func Generate(st store.State, resolve Resolver) (caddyfile string, warnings []st
 
 	for _, s := range st.Sites {
 		if s.Manual {
-			if b := strings.TrimSpace(s.ManualBlock); b != "" {
+			b := strings.TrimSpace(s.ManualBlock)
+			if err := ValidateManualText(b); b != "" && err != nil {
+				warnings = append(warnings, fmt.Sprintf("site %s dilewati: blok manual tidak valid: %v", s.ID, err))
+			} else if b != "" {
 				blocks = append(blocks, b)
 			}
 			continue
@@ -47,6 +50,10 @@ func Generate(st store.State, resolve Resolver) (caddyfile string, warnings []st
 		}
 		if bad := firstUnsafe(s.Domains); bad != "" {
 			warnings = append(warnings, fmt.Sprintf("site %s dilewati: domain tidak valid: %q", s.ID, bad))
+			continue
+		}
+		if err := ValidateCustom(s.Custom); err != nil {
+			warnings = append(warnings, fmt.Sprintf("site %s dilewati: custom tidak valid: %v", s.ID, err))
 			continue
 		}
 		body := unavailableLine

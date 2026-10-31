@@ -108,3 +108,21 @@ func TestGenerateDefensive(t *testing.T) {
 		t.Fatalf("got %s warns %v", got, warns)
 	}
 }
+
+func TestGenerateRevalidatesStoredInput(t *testing.T) {
+	st := store.State{
+		Settings: store.Settings{PanelPort: 8800},
+		Sites: []store.Site{
+			{ID: "1", Domains: []string{"a.com"}, Target: store.Target{Host: "1.2.3.4:80"}, Custom: "}\nevil.com {"},
+			{ID: "2", Manual: true, ManualBlock: "{\n debug\n}\nx.com {\n}"},
+			{ID: "3", Domains: []string{"ok.com"}, Target: store.Target{Host: "1.2.3.4:80"}},
+		},
+	}
+	got, warns := Generate(st, fakeResolve)
+	if strings.Contains(got, "evil") || strings.Contains(got, "debug") || strings.Contains(got, "a.com") {
+		t.Fatalf("bad stored data emitted:\n%s", got)
+	}
+	if !strings.Contains(got, "ok.com {") || len(warns) != 2 {
+		t.Fatalf("got %s warns %v", got, warns)
+	}
+}

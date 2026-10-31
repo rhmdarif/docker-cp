@@ -192,3 +192,56 @@ func TestValidateEmail(t *testing.T) {
 		}
 	}
 }
+
+func TestRejectCRAndEnvSubstitution(t *testing.T) {
+	custom := []string{
+		"respond a\r{\n}\nevil.com {\n\treverse_proxy localhost:2019\n}\nx.com {\n\trespond b\r}",
+		"respond {$X:#} {\n}\nevil.com {\n\treverse_proxy localhost:2019\n}\nx.com {\n\trespond b {$X:#} }",
+		"respond \"{$X:\"",
+		"respond {$SECRET}",
+	}
+	for _, s := range custom {
+		if ValidateCustom(s) == nil {
+			t.Errorf("custom %q accepted", s)
+		}
+	}
+	manual := []string{
+		"a.com {\n\trespond a\r{\n}\n:80 {\n\trespond hijack\n}\nx.com {\n\trespond b\r}\n}",
+		"a.com {\n\trespond {$X:#} {\n}\n:80 {\n\trespond hijack\n}\nx.com {\n\trespond b {$X:#} }\n}",
+	}
+	for _, s := range manual {
+		if ValidateManualText(s) == nil {
+			t.Errorf("manual %q accepted", s)
+		}
+	}
+}
+
+func TestNormalizeNewlines(t *testing.T) {
+	if got := NormalizeNewlines("a\r\nb\rc"); got != "a\nb\nc" {
+		t.Fatalf("%q", got)
+	}
+	in := "header {\r\n\tX 1\r\n}"
+	if ValidateCustom(in) == nil {
+		t.Fatal("raw CRLF should be rejected")
+	}
+	if err := ValidateCustom(NormalizeNewlines(in)); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateManualText(NormalizeNewlines("a.com {\r\n respond hi\r\n}")); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestWildcardSymmetric(t *testing.T) {
+	err := ValidateManualAdapted(adaptedWith(`[{"match":[{"host":["a.klien.com"]}]}]`), []string{"*.klien.com"})
+	if err == nil {
+		t.Error("concrete host must collide with other wildcard")
+	}
+	all := []store.Site{{ID: "1", Domains: []string{"*.klien.com"}}}
+	if _, err := ValidateDomains([]string{"a.klien.com"}, "", all, ""); err == nil {
+		t.Error("ValidateDomains must collide with existing wildcard")
+	}
+	if _, err := ValidateDomains([]string{"a.klien.com"}, "", nil, "*.klien.com"); err == nil {
+		t.Error("ValidateDomains must collide with wildcard panel domain")
+	}
+}

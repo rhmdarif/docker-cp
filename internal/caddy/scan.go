@@ -26,6 +26,15 @@ type token struct {
 // Caddy. Heredocs, ambiguous quoting and unquoted tokens starting with a
 // backslash (Caddy still opens strings/comments after one) are rejected.
 func scan(s string) ([]token, error) {
+	// Caddy drops \r without ending the token, so a\r{ is the literal a{.
+	if strings.Contains(s, "\r") {
+		return nil, errors.New("karakter carriage return (\\r) tidak diizinkan")
+	}
+	// Caddy substitutes {$ENV:default} over the whole file before lexing,
+	// so it can produce quotes, # or braces and leak environment values.
+	if strings.Contains(s, "{$") {
+		return nil, errors.New("substitusi environment ({$...}) tidak diizinkan")
+	}
 	var toks []token
 	rs := []rune(s)
 	depth, line := 0, 1
@@ -119,4 +128,11 @@ func hasImport(toks []token) bool {
 		}
 	}
 	return false
+}
+
+// NormalizeNewlines converts CRLF and lone CR to LF. Call it on textarea
+// input before validating and storing it.
+func NormalizeNewlines(s string) string {
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	return strings.ReplaceAll(s, "\r", "\n")
 }
