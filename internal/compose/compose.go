@@ -14,6 +14,7 @@ import (
 	"sort"
 
 	"docker-cp/internal/docker"
+	"docker-cp/internal/procenv"
 )
 
 type Action string
@@ -170,7 +171,7 @@ func (m *Manager) compose(ctx context.Context, name string, args []string, out i
 	full := append([]string{"compose", "--project-directory", d, "-p", name,
 		"-f", filepath.Join(d, "docker-compose.yml")}, args...)
 	cmd := exec.CommandContext(ctx, m.bin, full...)
-	cmd.Env = os.Environ()
+	cmd.Env = procenv.Child()
 	cmd.Stdout, cmd.Stderr = out, out
 	err := cmd.Run()
 	var ee *exec.ExitError

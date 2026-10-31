@@ -21,6 +21,7 @@ import (
 	"github.com/creack/pty"
 
 	"docker-cp/internal/docker"
+	"docker-cp/internal/procenv"
 )
 
 // ExecCmd is run via ["/bin/sh","-c",ExecCmd] inside containers.
@@ -50,7 +51,7 @@ type control struct {
 // ends. onStart (may be nil) receives the shell pid.
 func ServeHost(ctx context.Context, ws *websocket.Conn, shell string, onStart func(pid int)) error {
 	cmd := exec.Command(shell, "-l")
-	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
+	cmd.Env = procenv.Child("TERM=xterm-256color")
 	if os.Geteuid() == 0 {
 		cmd.Env = append(cmd.Env, "HOME=/root")
 	}

@@ -3,6 +3,7 @@ package compose
 import (
 	"bytes"
 	"context"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -230,5 +231,28 @@ func TestStartProject(t *testing.T) {
 	}
 	if err := StartProject(context.Background(), f.Client(), cs, "nothing"); err == nil {
 		t.Error("unknown project must fail")
+	}
+}
+
+func TestComposeChildEnvDropsPanelVars(t *testing.T) {
+	m, _, _ := newMgr(t)
+	envFile := filepath.Join(t.TempDir(), "env")
+	t.Setenv("FAKE_ENV", envFile)
+	t.Setenv("GOMEMLIMIT", "40MiB")
+	t.Setenv("GOGC", "50")
+	t.Setenv("DCP_STACKS_DIR", "/x")
+	if err := m.Write("shop", "services: {}\n", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Run(context.Background(), "shop", "up", io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(envFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := string(b)
+	if strings.Contains(env, "GOMEMLIMIT=") || strings.Contains(env, "GOGC=") || strings.Contains(env, "DCP_") || !strings.Contains(env, "FAKE_LOG=") {
+		t.Fatalf("child env:\n%s", env)
 	}
 }
